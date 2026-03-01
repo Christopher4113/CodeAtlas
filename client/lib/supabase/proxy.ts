@@ -47,16 +47,14 @@ export async function updateSession(request: NextRequest) {
   const { data } = await supabase.auth.getClaims();
   const user = data?.claims;
 
-  if (
-    request.nextUrl.pathname !== "/" &&
-    !user &&
-    !request.nextUrl.pathname.startsWith("/login") &&
-    !request.nextUrl.pathname.startsWith("/auth")
-  ) {
-    // no user, potentially respond by redirecting the user to the login page
-    const url = request.nextUrl.clone();
-    url.pathname = "/auth/login";
-    return NextResponse.redirect(url);
+  const protectedRoutes = ["/protected", "/dashboard"]; // Add your protected routes here
+  const isProtectedRoute = protectedRoutes.some((route) =>
+    request.nextUrl.pathname.startsWith(route),
+  );
+
+  if (isProtectedRoute && !user) {
+    // If the user is not authenticated and tries to access a protected route, redirect them to the login page.
+    return NextResponse.redirect(new URL("/auth/login", request.url));
   }
 
   // IMPORTANT: You *must* return the supabaseResponse object as it is.

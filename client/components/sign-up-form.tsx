@@ -15,6 +15,8 @@ import { Label } from "@/components/ui/label";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import SocialAuthButtons from "./social-auth-buttons";
+import { Separator } from "@radix-ui/react-dropdown-menu";
 
 export function SignUpForm({
   className,
@@ -64,6 +66,8 @@ export function SignUpForm({
           <CardDescription>Create a new account</CardDescription>
         </CardHeader>
         <CardContent>
+          <SocialAuthButtons />
+          <Separator />
           <form onSubmit={handleSignUp}>
             <div className="flex flex-col gap-6">
               <div className="grid gap-2">
