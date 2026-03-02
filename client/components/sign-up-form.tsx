@@ -55,6 +55,8 @@ export function SignUpForm({
       setError(error instanceof Error ? error.message : "An error occurred");
     } finally {
       setIsLoading(false);
+      setEmail("");
+      setPassword("");
     }
   };
 

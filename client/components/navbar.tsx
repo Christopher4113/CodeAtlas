@@ -1,31 +1,37 @@
-import { hasEnvVars } from "@/lib/utils";
 import React, { Suspense } from "react";
-import { EnvVarWarning } from "./env-var-warning";
-import { AuthButton } from "./auth-button";
-import { DeployButton } from "./deploy-button";
 import Link from "next/link";
+import { AuthButton } from "./auth-button";
 
 const Navbar = () => {
-    return (
-        <nav className="w-full flex justify-center border-b border-b-foreground/10 h-16">
-            <div className="w-full max-w-5xl flex justify-between items-center p-3 px-5 text-sm">
-                <div className="flex gap-5 items-center font-semibold">
-                    <Link href="/">Next.js Supabase Starter</Link>
-                    <div className="flex items-center gap-2">
-                        <DeployButton />
-                    </div>
-                </div>
-                {!hasEnvVars} ? (
-                    <EnvVarWarning />
-                ) : (
-                    <Suspense>
-                        <AuthButton />
-                    </Suspense>
-                )
-            </div>
-        </nav>
-    );
-};
+  return (
+    <header className="sticky top-0 z-50 w-full border-b border-black/10 bg-white/80 backdrop-blur-md shadow-sm">
+      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
+        
+        {/* Logo */}
+        <Link
+          href="/"
+          className="flex items-center gap-2 text-lg font-semibold tracking-tight"
+        >
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-black text-white text-xs font-bold">
+            CA
+          </div>
+          <span>
+            Code<span className="text-black/60">Atlas</span>
+          </span>
+        </Link>
 
+        {/* Auth */}
+        <Suspense
+          fallback={
+            <div className="h-9 w-24 animate-pulse rounded-md bg-gray-200" />
+          }
+        >
+          <AuthButton />
+        </Suspense>
+
+      </div>
+    </header>
+  );
+};
 
 export default Navbar;
