@@ -3,7 +3,7 @@ import React from 'react'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 
-type Provider = 'google' | 'github'
+type Provider = 'github'
 
 type ProviderType = {
   name: Provider
@@ -13,7 +13,6 @@ type ProviderType = {
 }
 
 const providers: ProviderType[] = [
-  { name: 'google', label: 'Continue with Google', icon: '/google.png', size: 30 },
   { name: 'github', label: 'Continue with GitHub', icon: '/github.svg', size: 32 },
 ]
 
