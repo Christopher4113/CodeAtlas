@@ -1,13 +1,11 @@
-import Navbar from '@/components/navbar'
-import React from 'react'
+import Navbar from "@/components/navbar";
+import React from "react";
 
-const layout = ({children} : {children: React.ReactNode}) => {
+export default function Layout({ children }: { children: React.ReactNode }) {
   return (
-    <div className='flex-1 w-full flex flex-col gap-20 items-center'>
+    <div className="min-h-screen w-full">
       <Navbar />
-      <main>{children}</main>
+      <main className="w-full">{children}</main>
     </div>
-  )
+  );
 }
-
-export default layout

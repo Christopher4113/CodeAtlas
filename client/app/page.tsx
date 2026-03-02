@@ -7,11 +7,11 @@ function HeroSection() {
     <section className="flex flex-col items-center text-center px-4 pt-20 pb-12 md:pt-32 md:pb-16 max-w-4xl mx-auto">
       <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-border bg-card px-4 py-1.5">
         <span className="size-2 rounded-full bg-[#7ce38b] animate-pulse" />
-        <span className="text-sm font-mono text-[#c6cdd5]">
+        <span className="text-sm font-mono text-black">
           Autonomous Codebase Intelligence
         </span>
       </div>
-      <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold tracking-tight text-foreground text-balance leading-[1.1] text-[#77bdfb]">
+      <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold tracking-tight text-foreground text-balance leading-[1.1] text-white">
         Understand any codebase{" "}
         <span className="text-[#77bdfb]">in minutes, not weeks.</span>
       </h1>

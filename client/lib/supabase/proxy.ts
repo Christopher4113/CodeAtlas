@@ -3,18 +3,10 @@ import { NextResponse, type NextRequest } from "next/server";
 import { hasEnvVars } from "../utils";
 
 export async function updateSession(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({
-    request,
-  });
+  let supabaseResponse = NextResponse.next({ request });
 
-  // If the env vars are not set, skip proxy check. You can remove this
-  // once you setup the project.
-  if (!hasEnvVars) {
-    return supabaseResponse;
-  }
+  if (!hasEnvVars) return supabaseResponse;
 
-  // With Fluid compute, don't put this client in a global environment
-  // variable. Always create a new one on each request.
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
@@ -24,12 +16,8 @@ export async function updateSession(request: NextRequest) {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value),
-          );
-          supabaseResponse = NextResponse.next({
-            request,
-          });
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+          supabaseResponse = NextResponse.next({ request });
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options),
           );
@@ -38,37 +26,40 @@ export async function updateSession(request: NextRequest) {
     },
   );
 
-  // Do not run code between createServerClient and
-  // supabase.auth.getClaims(). A simple mistake could make it very hard to debug
-  // issues with users being randomly logged out.
-
-  // IMPORTANT: If you remove getClaims() and you use server-side rendering
-  // with the Supabase client, your users may be randomly logged out.
   const { data } = await supabase.auth.getClaims();
   const user = data?.claims;
 
-  const protectedRoutes = ["/protected", "/dashboard"]; // Add your protected routes here
-  const isProtectedRoute = protectedRoutes.some((route) =>
-    request.nextUrl.pathname.startsWith(route),
+  const pathname = request.nextUrl.pathname;
+
+  // Never apply redirects to Next internals, static files, or APIs
+  const isBypass =
+    pathname.startsWith("/_next") ||
+    pathname.startsWith("/api") ||
+    pathname.startsWith("/favicon.ico") ||
+    pathname.match(/\.(png|jpg|jpeg|gif|svg|webp|ico|css|js|map)$/);
+
+  if (isBypass) return supabaseResponse;
+
+  // 1) Routes that REQUIRE auth
+  const protectedRoutes = ["/protected", "/dashboard", "/repo"];
+  const isProtectedRoute = protectedRoutes.some((r) => pathname.startsWith(r));
+
+  // 2) Routes that should be inaccessible when logged in (public-only)
+  // Put your landing page and auth pages here.
+  const publicOnlyRoutes = ["/", "/auth", "/connect-github"];
+  const isPublicOnlyRoute = publicOnlyRoutes.some((r) =>
+    r === "/" ? pathname === "/" : pathname.startsWith(r),
   );
 
+  // Not logged in → block protected
   if (isProtectedRoute && !user) {
-    // If the user is not authenticated and tries to access a protected route, redirect them to the login page.
     return NextResponse.redirect(new URL("/auth/login", request.url));
   }
 
-  // IMPORTANT: You *must* return the supabaseResponse object as it is.
-  // If you're creating a new response object with NextResponse.next() make sure to:
-  // 1. Pass the request in it, like so:
-  //    const myNewResponse = NextResponse.next({ request })
-  // 2. Copy over the cookies, like so:
-  //    myNewResponse.cookies.setAll(supabaseResponse.cookies.getAll())
-  // 3. Change the myNewResponse object to fit your needs, but avoid changing
-  //    the cookies!
-  // 4. Finally:
-  //    return myNewResponse
-  // If this is not done, you may be causing the browser and server to go out
-  // of sync and terminate the user's session prematurely!
+  // Logged in → block public-only
+  if (user && isPublicOnlyRoute) {
+    return NextResponse.redirect(new URL("/dashboard", request.url));
+  }
 
   return supabaseResponse;
 }
