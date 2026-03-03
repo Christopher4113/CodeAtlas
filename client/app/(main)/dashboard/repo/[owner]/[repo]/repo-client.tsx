@@ -1,20 +1,16 @@
 "use client";
 
 import { useState } from "react";
-
-interface AnalysisResult {
-  [key: string]: unknown;
-}
+import { useRouter } from "next/navigation";
 
 export default function RepoClient({ owner, repo }: { owner: string; repo: string }) {
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const startAnalysis = async () => {
     setLoading(true);
     setError(null);
-    setResult(null);
 
     const res = await fetch("/api/analysis/start", {
       method: "POST",
@@ -23,37 +19,38 @@ export default function RepoClient({ owner, repo }: { owner: string; repo: strin
     });
 
     const data = await res.json();
+
     if (!res.ok) {
       setError(data?.error ?? "Failed to start analysis");
       setLoading(false);
       return;
     }
 
-    setResult(data);
-    setLoading(false);
+    const analysisId = data?.analysis_id;
+    if (!analysisId) {
+      setError("Missing analysis_id from server");
+      setLoading(false);
+      return;
+    }
+
+    router.push(`/dashboard/repo/${owner}/${repo}/runs/${analysisId}`);
   };
 
   return (
     <div className="p-6">
-      <h1 className="text-xl font-semibold">
+      <h1 className="text-xl font-semibold text-[#ecf2f8]">
         {owner}/{repo}
       </h1>
 
       <button
-        className="mt-4 rounded-md border px-4 py-2 hover:bg-gray-50 disabled:opacity-50"
+        className="mt-4 rounded-md border border-[#21262d] bg-[#161b22] px-4 py-2 text-[#ecf2f8] hover:bg-[#1c2129] disabled:opacity-50"
         onClick={startAnalysis}
         disabled={loading}
       >
-        {loading ? "Analyzing..." : "Analyze repo"}
+        {loading ? "Starting..." : "Analyze repo"}
       </button>
 
       {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
-
-      {result && (
-        <pre className="mt-6 rounded-md border p-4 text-xs overflow-auto">
-          {JSON.stringify(result, null, 2)}
-        </pre>
-      )}
     </div>
   );
 }
