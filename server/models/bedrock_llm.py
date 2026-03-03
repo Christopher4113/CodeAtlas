@@ -1,0 +1,19 @@
+import os
+from functools import lru_cache
+from langchain_aws import ChatBedrock
+
+
+@lru_cache(maxsize=1)
+def get_llm() -> ChatBedrock:
+    model_id = os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-sonnet-4-6")
+    region = os.getenv("AWS_REGION", "us-east-1")
+
+    return ChatBedrock(
+        model_id=model_id,
+        region_name=region,
+        provider="anthropic",
+        model_kwargs={
+            "max_tokens": 600,
+            "temperature": 0.2,
+        },
+    )

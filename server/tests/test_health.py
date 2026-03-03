@@ -29,3 +29,11 @@ def test_start_and_get_analysis():
 def test_pinecone_health_route_exists():
     res = client.get("/v1/pinecone/health")
     assert res.status_code in (200, 500)
+
+def test_bedrock_health_route_exists():
+    res = client.get("/v1/bedrock/whoami")
+    assert res.status_code in (200, 500)
+
+def test_graph_health_route_exists():
+    res = client.post("/v1/graph/ping")
+    assert res.status_code in (200, 500)

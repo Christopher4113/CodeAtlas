@@ -3,7 +3,10 @@ from typing import Optional, Dict
 import uuid
 from fastapi import FastAPI, HTTPException
 from typing import Dict
+from dotenv import load_dotenv
+load_dotenv()
 from models.pinecone_client import describe_index, ensure_index_exists
+from graphs.ping_graph import build_ping_graph
 
 class StartAnalysisRequest(BaseModel):
     owner: str
@@ -58,4 +61,19 @@ def pinecone_health():
     return {
         "ok": True,
         "namespaces": namespaces,
+    }
+
+ping_graph = build_ping_graph()
+
+@app.post("/v1/graph/ping")
+def graph_ping():
+    out = ping_graph.invoke({"prompt": "Reply with only: ok", "answer": ""})
+    return {"ok": True, "answer": out["answer"]}
+
+@app.get("/v1/bedrock/whoami")
+def bedrock_whoami():
+    import os
+    return {
+        "region": os.getenv("AWS_REGION"),
+        "model_id": os.getenv("BEDROCK_MODEL_ID"),
     }
