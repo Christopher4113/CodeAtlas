@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Iterable, Mapping, Any
 
 from pinecone import Pinecone, ServerlessSpec
 
@@ -13,20 +14,59 @@ def get_pinecone() -> Pinecone:
 
 
 def ensure_index_exists() -> None:
+    """
+    Ensure the Pinecone index exists.
+
+    For V1 we assume an integrated embedding index using
+    `llama-text-embed-v2`, matching the configuration shown in the
+    Pinecone console (record field: `text`).
+    """
     pc = get_pinecone()
     name = settings.pinecone_index_name
 
     existing = {i["name"] for i in pc.list_indexes()}
     if name not in existing:
-        pc.create_index(
+        # Use the newer helper which configures the index for the
+        # specified embedding model so that upsert_records will
+        # automatically call the hosted llama-text-embed-v2 model.
+        pc.create_index_for_model(
             name=name,
-            dimension=settings.pinecone_dimension,
+            cloud=settings.pinecone_cloud,
+            region=settings.pinecone_region,
             metric=settings.pinecone_metric,
-            spec=ServerlessSpec(cloud=settings.pinecone_cloud, region=settings.pinecone_region),
+            embed={
+                "model": settings.pinecone_embed_model,
+                "field_map": {settings.pinecone_text_field: "text"},
+            },
         )
 
 
-def describe_index():
+def get_index_name() -> str:
+    return settings.pinecone_index_name
+
+
+def get_index():
     pc = get_pinecone()
-    index = pc.Index(settings.pinecone_index_name)
+    return pc.Index(settings.pinecone_index_name)
+
+
+def describe_index():
+    index = get_index()
     return index.describe_index_stats()
+
+
+def upsert_records(namespace: str, records: Iterable[Mapping[str, Any]]) -> None:
+    """
+    Convenience helper that uses the integrated embedding index. Incoming
+    records must include:
+
+    - an `id` (or `_id`) field
+    - a text field matching `settings.pinecone_text_field`
+    - any additional metadata fields you want to filter on later
+    """
+    index = get_index()
+    # Pinecone SDK expects a list; convert any iterable just in case.
+    payload = list(records)
+    if not payload:
+        return
+    index.upsert_records(namespace, payload)

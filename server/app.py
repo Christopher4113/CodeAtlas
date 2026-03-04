@@ -1,12 +1,14 @@
 from pydantic import BaseModel
-from typing import Optional, Dict
+from typing import Optional, Dict, Any
 import uuid
 from fastapi import FastAPI, HTTPException
-from typing import Dict
 from dotenv import load_dotenv
+
 load_dotenv()
 from models.pinecone_client import describe_index, ensure_index_exists
 from graphs.ping_graph import build_ping_graph
+from graphs.codeatlas_graph import build_codeatlas_graph
+
 
 class StartAnalysisRequest(BaseModel):
     owner: str
@@ -18,27 +20,76 @@ class StartAnalysisRequest(BaseModel):
 class StartAnalysisResponse(BaseModel):
     analysis_id: str
     status: str
+    report: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+
+
+class AnalysisReportResponse(BaseModel):
+    analysis_id: str
+    report: Dict[str, Any]
 
 
 app = FastAPI()
 
 JOBS: Dict[str, dict] = {}
 
+codeatlas_graph = build_codeatlas_graph()
+
 
 @app.post("/v1/analyses", response_model=StartAnalysisResponse)
 def start_analysis(payload: StartAnalysisRequest):
     analysis_id = str(uuid.uuid4())
-    JOBS[analysis_id] = {
+    branch = payload.branch or "main"
+
+    base_job = {
         "analysis_id": analysis_id,
-        "status": "queued",
-        "stage": "queued",
+        "status": "running",
+        "stage": "running",
         "owner": payload.owner,
         "repo": payload.repo,
-        "branch": payload.branch or "main",
+        "branch": branch,
+    }
+    JOBS[analysis_id] = base_job
+
+    try:
+        result = codeatlas_graph.invoke(
+            {
+                "owner": payload.owner,
+                "repo": payload.repo,
+                "branch": branch,
+                "github_token": payload.github_token,
+            }
+        )
+    except Exception as exc:
+        # Surface the underlying error to the client instead of
+        # returning a generic 500 so it is easier to debug.
+        error_message = str(exc)
+        JOBS[analysis_id] = {
+            **base_job,
+            "status": "error",
+            "stage": "failed",
+            "error": error_message,
+        }
+        return {
+            "analysis_id": analysis_id,
+            "status": "error",
+            "report": None,
+            "error": error_message,
+        }
+
+    report: Dict[str, Any] = {
+        "repo_summary": result.get("repo_summary"),
     }
 
-    # TODO: enqueue to SQS here (analysis_id)
-    return {"analysis_id": analysis_id, "status": "queued"}
+    JOBS[analysis_id] = {
+        **base_job,
+        "status": "completed",
+        "stage": "completed",
+        "report": report,
+    }
+
+    # For V1, run synchronously and return the report payload directly.
+    return {"analysis_id": analysis_id, "status": "completed", "report": report, "error": None}
 
 
 @app.get("/v1/analyses/{analysis_id}")
@@ -47,6 +98,14 @@ def get_analysis(analysis_id: str):
     if not job:
         raise HTTPException(status_code=404, detail="not_found")
     return job
+
+
+@app.get("/v1/analyses/{analysis_id}/report", response_model=AnalysisReportResponse)
+def get_analysis_report(analysis_id: str):
+    job = JOBS.get(analysis_id)
+    if not job or "report" not in job:
+        raise HTTPException(status_code=404, detail="not_found")
+    return {"analysis_id": analysis_id, "report": job["report"]}
 
 
 @app.get("/v1/pinecone/health")
