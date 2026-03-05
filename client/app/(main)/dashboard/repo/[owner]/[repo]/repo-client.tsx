@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 export default function RepoClient({ owner, repo }: { owner: string; repo: string }) {
   const router = useRouter();
@@ -21,7 +22,10 @@ export default function RepoClient({ owner, repo }: { owner: string; repo: strin
     const data = await res.json();
 
     if (!res.ok) {
-      setError(data?.error ?? "Failed to start analysis");
+      const msg = data?.error === "missing_github_token"
+        ? "Add a GitHub token in Settings to run analysis."
+        : (data?.error ?? "Failed to start analysis");
+      setError(msg);
       setLoading(false);
       return;
     }
@@ -50,7 +54,18 @@ export default function RepoClient({ owner, repo }: { owner: string; repo: strin
         {loading ? "Starting..." : "Analyze repo"}
       </button>
 
-      {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
+      {error && (
+        <p className="mt-3 text-sm text-red-400">
+          {error}
+          {error.includes("GitHub token") && (
+            <>{" "}
+              <Link href="/dashboard/settings" className="text-[#58a6ff] hover:underline">
+                Open Settings
+              </Link>
+            </>
+          )}
+        </p>
+      )}
     </div>
   );
 }

@@ -8,7 +8,12 @@ from langgraph.graph import StateGraph, END
 
 from models.bedrock_llm import get_llm
 from models.github_client import fetch_repo_tree, fetch_multiple_file_contents, GitHubError
-from models.pinecone_client import ensure_index_exists, upsert_records, get_index_name
+from models.pinecone_client import (
+    ensure_index_exists,
+    upsert_records,
+    get_index_name,
+    upsert_repo_card,
+)
 
 
 class RepoFile(TypedDict):
@@ -40,6 +45,11 @@ class CodeAtlasState(TypedDict, total=False):
 
     # Analysis
     repo_summary: Dict[str, Any]
+    architecture_mermaid: str
+    onboarding_doc: str
+    dependency_mermaid: str
+    bug_risks: List[str]
+    frameworks_summary: str
 
     # Errors
     error: str
@@ -145,6 +155,47 @@ def _prioritize_paths(files: List[RepoFile]) -> List[str]:
 
     # Sort by score, then path for stable ordering.
     return [f["path"] for f in sorted(files, key=lambda f: (score(f["path"]), f["path"]))]
+
+
+def _extract_json(text: str) -> Optional[Dict[str, Any]]:
+    if not text:
+        return None
+    text = text.strip()
+    if text.startswith("```"):
+        lines = text.split("\n")
+        if lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        text = "\n".join(lines)
+    text = text.strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        start, end = text.find("{"), text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            try:
+                return json.loads(text[start : end + 1])
+            except json.JSONDecodeError:
+                pass
+    return None
+
+
+def _extract_mermaid(text: str) -> str:
+    if not text:
+        return ""
+    text = text.strip()
+    if "```mermaid" in text:
+        start = text.find("```mermaid") + len("```mermaid")
+        end = text.find("```", start)
+        if end != -1:
+            return text[start:end].strip()
+    if "```" in text:
+        start = text.find("```") + 3
+        end = text.find("```", start)
+        if end != -1:
+            return text[start:end].strip()
+    return text
 
 
 def _chunk_file(path: str, text: str, max_chars: int = 2400, overlap: int = 200) -> List[Chunk]:
@@ -336,31 +387,7 @@ Do not include backticks, markdown, or any explanation outside of the JSON.
 
     msg = llm.invoke(prompt)
     raw = msg.content.strip()
-
-    def extract_json(text: str) -> Optional[Dict[str, Any]]:
-        # Strip markdown code fences if present.
-        if text.startswith("```"):
-            lines = text.split("\n")
-            if lines[0].startswith("```"):
-                lines = lines[1:]
-            if lines and lines[-1].strip() == "```":
-                lines = lines[:-1]
-            text = "\n".join(lines)
-        text = text.strip()
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            # Try to find the first { and last } and parse that.
-            start = text.find("{")
-            end = text.rfind("}")
-            if start != -1 and end != -1 and end > start:
-                try:
-                    return json.loads(text[start : end + 1])
-                except json.JSONDecodeError:
-                    pass
-        return None
-
-    summary = extract_json(raw)
+    summary = _extract_json(raw)
     if summary is None:
         summary = {
             "short_overview": "Model returned non-JSON output.",
@@ -373,25 +400,219 @@ Do not include backticks, markdown, or any explanation outside of the JSON.
     return {**state, "repo_summary": summary}
 
 
+def node_make_architecture_diagram(state: CodeAtlasState) -> CodeAtlasState:
+    if state.get("error"):
+        return state
+    if "repo_summary" not in state:
+        return {**state, "error": "repo_summary missing before architecture_diagram"}
+
+    summary = state["repo_summary"]
+    components = summary.get("main_components", []) or []
+    stack = summary.get("stack", []) or []
+    overview = summary.get("short_overview", "")
+
+    llm = get_llm(max_tokens=1200)
+    prompt = f"""You are CodeAtlas. Given this repo summary, produce a SIMPLE architecture diagram as Mermaid code.
+
+Overview: {overview}
+Main components: {', '.join(components) if components else 'unknown'}
+Stack: {', '.join(stack) if stack else 'unknown'}
+
+Output ONLY a Mermaid diagram (flowchart or graph). Keep it simple: 5-10 nodes max showing high-level layers or components (e.g. Frontend, API, DB, Auth). Use subgraph if helpful.
+Example style:
+flowchart LR
+  subgraph Client
+    UI
+  end
+  subgraph Server
+    API
+  end
+  DB[(Database)]
+  UI --> API --> DB
+
+Return ONLY the Mermaid code block, no other text. Start with ```mermaid and end with ```."""
+
+    msg = llm.invoke(prompt)
+    raw = (msg.content or "").strip()
+    mermaid = _extract_mermaid(raw) or "flowchart LR\n  A[Repo]\n  B[Components]\n  A --> B"
+    return {**state, "architecture_mermaid": mermaid}
+
+
+def node_make_onboarding_doc(state: CodeAtlasState) -> CodeAtlasState:
+    if state.get("error"):
+        return state
+    if "repo_summary" not in state or "files_content" not in state:
+        return {**state, "error": "repo_summary/files_content missing before onboarding_doc"}
+
+    summary = state["repo_summary"]
+    readme = ""
+    for name in ("README.md", "readme.md", "README", "Readme.md"):
+        if name in state["files_content"]:
+            readme = state["files_content"][name][:8000]
+            break
+
+    llm = get_llm(max_tokens=2400)
+    prompt = f"""You are CodeAtlas. Create a ONE-PAGE onboarding document (plain text or markdown) for a new developer joining this repo.
+
+Repo: {state['owner']}/{state['repo']} (branch: {state['branch']})
+Overview: {summary.get('short_overview', '')}
+How to run: {summary.get('how_to_run', 'unknown')}
+Main components: {', '.join(summary.get('main_components', []) or [])}
+Stack: {', '.join(summary.get('stack', []) or [])}
+
+README excerpt:
+---
+{readme[:6000]}
+---
+
+Write a single page (about 300-500 words) that includes:
+1. What this repo does (2-3 sentences)
+2. Tech stack and key frameworks
+3. How to get started (install, run, env vars if any)
+4. Main folders / entry points to know
+5. Any gotchas or notes from the README
+
+Output ONLY the onboarding document text. No preamble."""
+
+    msg = llm.invoke(prompt)
+    doc = (msg.content or "").strip()
+    return {**state, "onboarding_doc": doc}
+
+
+def node_make_dependency_graph(state: CodeAtlasState) -> CodeAtlasState:
+    if state.get("error"):
+        return state
+    if "repo_summary" not in state or "files_content" not in state:
+        return {**state, "error": "repo_summary/files_content missing before dependency_graph"}
+
+    summary = state["repo_summary"]
+    stack = summary.get("stack", []) or []
+    package_snippet = ""
+    for candidate in ("package.json", "pyproject.toml", "requirements.txt", "Cargo.toml", "go.mod"):
+        if candidate in state["files_content"]:
+            package_snippet = state["files_content"][candidate][:3000]
+            break
+
+    llm = get_llm(max_tokens=1000)
+    prompt = f"""You are CodeAtlas. Produce a SIMPLE dependency graph as Mermaid code for this repo.
+
+Stack: {', '.join(stack) if stack else 'unknown'}
+
+Dependency/config excerpt:
+---
+{package_snippet}
+---
+
+Output ONLY a Mermaid diagram (flowchart or graph) showing key dependencies: app -> libraries/frameworks (e.g. Next.js -> React, API -> PostgreSQL). 5-12 nodes max.
+Return ONLY the Mermaid code block. Start with ```mermaid and end with ```."""
+
+    msg = llm.invoke(prompt)
+    raw = (msg.content or "").strip()
+    mermaid = _extract_mermaid(raw) or "flowchart LR\n  App[Application]\n  Deps[Dependencies]\n  App --> Deps"
+    return {**state, "dependency_mermaid": mermaid}
+
+
+def node_make_bug_risk_analysis(state: CodeAtlasState) -> CodeAtlasState:
+    if state.get("error"):
+        return state
+    if "repo_summary" not in state:
+        return {**state, "error": "repo_summary missing before bug_risk_analysis"}
+
+    summary = state["repo_summary"]
+    notes = summary.get("notes", []) or []
+    overview = summary.get("short_overview", "")
+
+    llm = get_llm(max_tokens=800)
+    prompt = f"""You are CodeAtlas. Based on this repo summary, list potential bug risks or areas to watch.
+
+Overview: {overview}
+Notes from analysis: {chr(10).join(notes) if notes else 'None'}
+
+Return a JSON object with a single key "bug_risks" whose value is an array of short strings (3-8 items), e.g. ["No input validation on API", "Env vars in code"]. If you see no clear risks, return ["No major risks identified from summary."].
+Output ONLY valid JSON, no markdown or explanation."""
+
+    msg = llm.invoke(prompt)
+    raw = (msg.content or "").strip()
+    parsed = _extract_json(raw)
+    risks = (parsed or {}).get("bug_risks") if isinstance(parsed, dict) else None
+    if not isinstance(risks, list):
+        risks = ["Bug risk analysis unavailable."]
+    return {**state, "bug_risks": risks}
+
+
+def node_format_frameworks(state: CodeAtlasState) -> CodeAtlasState:
+    if state.get("error"):
+        return state
+    if "repo_summary" not in state:
+        return {**state}
+    stack = state["repo_summary"].get("stack") or []
+    if not stack:
+        return {**state, "frameworks_summary": "Unknown"}
+    # Format as readable list, e.g. "Next.js, PostgreSQL with Supabase"
+    frameworks_summary = ", ".join(str(s) for s in stack[:15])
+    return {**state, "frameworks_summary": frameworks_summary}
+
+
+def node_upsert_pinecone_reason(state: CodeAtlasState) -> CodeAtlasState:
+    """Store a searchable 'reason' record in Pinecone so this repo can be found later (e.g. by stack or purpose)."""
+    if state.get("error"):
+        return state
+    if "repo_summary" not in state or "chunks" not in state:
+        return {**state}
+
+    summary = state["repo_summary"]
+    overview = summary.get("short_overview", "")
+    stack = summary.get("stack", []) or []
+    components = summary.get("main_components", []) or []
+
+    reason_text = (
+        f"Repository {state['owner']}/{state['repo']} (branch {state['branch']}) indexed by CodeAtlas. "
+        f"Purpose: {overview} "
+        f"Tech stack: {', '.join(stack)}. "
+        f"Main components: {', '.join(components)}. "
+        "Indexed for: architecture diagrams, onboarding docs, dependency mapping, bug risk analysis, and framework detection."
+    )
+    namespace = _build_namespace(state)
+    upsert_repo_card(
+        namespace,
+        reason_text,
+        owner=state["owner"],
+        repo=state["repo"],
+        branch=state["branch"],
+    )
+    return state
+
+
 def build_codeatlas_graph():
     """
-    Smallest useful slice:
-    - fetch tree
-    - fetch contents
-    - chunk + upsert to Pinecone
-    - single analysis node: repo overview
+    Full CodeAtlas pipeline:
+    - fetch tree -> fetch contents -> chunk + upsert to Pinecone
+    - repo overview -> architecture diagram -> onboarding doc -> dependency graph
+    - bug risk analysis -> format frameworks -> upsert Pinecone "reason" card -> END
     """
     g = StateGraph(CodeAtlasState)
     g.add_node("fetch_repo_tree", node_fetch_repo_tree)
     g.add_node("fetch_file_contents", node_fetch_file_contents)
     g.add_node("chunk_and_upsert", node_chunk_and_upsert)
     g.add_node("make_repo_overview", node_make_repo_overview)
+    g.add_node("make_architecture_diagram", node_make_architecture_diagram)
+    g.add_node("make_onboarding_doc", node_make_onboarding_doc)
+    g.add_node("make_dependency_graph", node_make_dependency_graph)
+    g.add_node("make_bug_risk_analysis", node_make_bug_risk_analysis)
+    g.add_node("format_frameworks", node_format_frameworks)
+    g.add_node("upsert_pinecone_reason", node_upsert_pinecone_reason)
 
     g.set_entry_point("fetch_repo_tree")
     g.add_edge("fetch_repo_tree", "fetch_file_contents")
     g.add_edge("fetch_file_contents", "chunk_and_upsert")
     g.add_edge("chunk_and_upsert", "make_repo_overview")
-    g.add_edge("make_repo_overview", END)
+    g.add_edge("make_repo_overview", "make_architecture_diagram")
+    g.add_edge("make_architecture_diagram", "make_onboarding_doc")
+    g.add_edge("make_onboarding_doc", "make_dependency_graph")
+    g.add_edge("make_dependency_graph", "make_bug_risk_analysis")
+    g.add_edge("make_bug_risk_analysis", "format_frameworks")
+    g.add_edge("format_frameworks", "upsert_pinecone_reason")
+    g.add_edge("upsert_pinecone_reason", END)
 
     return g.compile()
 

@@ -14,7 +14,15 @@ export async function POST(req: Request) {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const githubToken = session.provider_token;
+  let githubToken = session.provider_token;
+  if (!githubToken) {
+    const { data: row } = await supabase
+      .from("user_github_tokens")
+      .select("github_token")
+      .eq("user_id", session.user.id)
+      .single();
+    githubToken = row?.github_token ?? null;
+  }
   if (!githubToken) return NextResponse.json({ error: "missing_github_token" }, { status: 400 });
 
   const body = await req.json();

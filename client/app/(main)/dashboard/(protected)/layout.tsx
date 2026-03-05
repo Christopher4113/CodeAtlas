@@ -28,9 +28,6 @@ export default async function DashboardLayout({
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/auth/login");
 
-  const hasGithub = user.identities?.some((i) => i.provider === "github");
-  if (!hasGithub) redirect("/dashboard/connect-github");
-
   return (
     <Suspense fallback={<div className="p-6">Loading...</div>}>
       {children}

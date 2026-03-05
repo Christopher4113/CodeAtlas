@@ -4,8 +4,9 @@ import { cookies } from "next/headers";
 
 export async function GET(
   _req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   const cookieStore = await cookies();
 
   const supabase = createServerClient(
@@ -20,7 +21,7 @@ export async function GET(
   const fastapiUrl = process.env.FASTAPI_URL;
   if (!fastapiUrl) return NextResponse.json({ error: "FASTAPI_URL_not_set" }, { status: 500 });
 
-  const r = await fetch(`${fastapiUrl}/v1/analyses/${params.id}`, { cache: "no-store" });
+  const r = await fetch(`${fastapiUrl}/v1/analyses/${id}`, { cache: "no-store" });
 
   const text = await r.text();
   let data: Record<string, unknown>;

@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+
 
 type Repo = {
   id: number;
@@ -44,23 +46,31 @@ export default function Dashboard() {
   return (
     <main className="min-h-screen flex flex-col bg-[#0d1117]">
       <div className="flex-1 w-full max-w-4xl mx-auto px-4 py-10 md:px-6 md:py-14">
-        <div className="flex items-center gap-3 mb-8">
-          <svg
-            className="size-5 text-[#89929b]"
-            fill="none"
-            viewBox="0 0 24 24"
-            strokeWidth={1.5}
-            stroke="currentColor"
+        <div className="flex items-center justify-between gap-4 mb-8">
+          <div className="flex items-center gap-3">
+            <svg
+              className="size-5 text-[#89929b]"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth={1.5}
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M2.25 12.75V12A2.25 2.25 0 0 1 4.5 9.75h15A2.25 2.25 0 0 1 21.75 12v.75m-8.69-6.44-2.12-2.12a1.5 1.5 0 0 0-1.061-.44H4.5A2.25 2.25 0 0 0 2.25 6v12a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9a2.25 2.25 0 0 0-2.25-2.25h-5.379a1.5 1.5 0 0 1-1.06-.44Z"
+              />
+            </svg>
+            <h1 className="text-xl font-semibold text-[#ecf2f8]">
+              Pick a repo
+            </h1>
+          </div>
+          <Link
+            href="/dashboard/settings"
+            className="text-sm text-[#58a6ff] hover:underline"
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M2.25 12.75V12A2.25 2.25 0 0 1 4.5 9.75h15A2.25 2.25 0 0 1 21.75 12v.75m-8.69-6.44-2.12-2.12a1.5 1.5 0 0 0-1.061-.44H4.5A2.25 2.25 0 0 0 2.25 6v12a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9a2.25 2.25 0 0 0-2.25-2.25h-5.379a1.5 1.5 0 0 1-1.06-.44Z"
-            />
-          </svg>
-          <h1 className="text-xl font-semibold text-[#ecf2f8]">
-            Pick a repo
-          </h1>
+            Settings
+          </Link>
         </div>
 
         {loading ? (
@@ -84,7 +94,14 @@ export default function Dashboard() {
               No repositories found
             </p>
             <p className="mt-1 text-sm text-[#89929b]">
-              Connect your GitHub account to get started.
+              <Link href="/dashboard/connect-github" className="text-[#58a6ff] hover:underline">
+                Connect GitHub (OAuth)
+              </Link>
+              {" or add a token in "}
+              <Link href="/dashboard/settings" className="text-[#58a6ff] hover:underline">
+                Settings
+              </Link>
+              {" to list and analyze repos."}
             </p>
           </div>
         ) : (

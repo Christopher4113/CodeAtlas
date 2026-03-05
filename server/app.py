@@ -5,7 +5,7 @@ from fastapi import FastAPI, HTTPException
 from dotenv import load_dotenv
 
 load_dotenv()
-from models.pinecone_client import describe_index, ensure_index_exists
+from models.pinecone_client import describe_index, ensure_index_exists, search_repos_by_owner
 from graphs.ping_graph import build_ping_graph
 from graphs.codeatlas_graph import build_codeatlas_graph
 
@@ -27,6 +27,12 @@ class StartAnalysisResponse(BaseModel):
 class AnalysisReportResponse(BaseModel):
     analysis_id: str
     report: Dict[str, Any]
+
+
+class RepoSearchRequest(BaseModel):
+    query: str
+    owner: str
+    top_k: Optional[int] = 10
 
 
 app = FastAPI()
@@ -79,6 +85,11 @@ def start_analysis(payload: StartAnalysisRequest):
 
     report: Dict[str, Any] = {
         "repo_summary": result.get("repo_summary"),
+        "architecture_mermaid": result.get("architecture_mermaid"),
+        "onboarding_doc": result.get("onboarding_doc"),
+        "dependency_mermaid": result.get("dependency_mermaid"),
+        "bug_risks": result.get("bug_risks"),
+        "frameworks_summary": result.get("frameworks_summary"),
     }
 
     JOBS[analysis_id] = {
@@ -106,6 +117,21 @@ def get_analysis_report(analysis_id: str):
     if not job or "report" not in job:
         raise HTTPException(status_code=404, detail="not_found")
     return {"analysis_id": analysis_id, "report": job["report"]}
+
+
+@app.post("/v1/repos/search")
+def search_repos(payload: RepoSearchRequest):
+    """
+    Search repos in Pinecone scoped to a single owner. Returns only repos belonging
+    to the given owner (use the authenticated user's GitHub username as owner).
+    """
+    top_k = min(payload.top_k or 10, 50)
+    results = search_repos_by_owner(
+        owner=payload.owner,
+        query_text=payload.query.strip(),
+        top_k=top_k,
+    )
+    return {"owner": payload.owner, "query": payload.query, "matches": results}
 
 
 @app.get("/v1/pinecone/health")

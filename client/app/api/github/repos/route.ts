@@ -30,7 +30,15 @@ export async function GET() {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const token = session.provider_token;
+  let token = session.provider_token;
+  if (!token) {
+    const { data: row } = await supabase
+      .from("user_github_tokens")
+      .select("github_token")
+      .eq("user_id", session.user.id)
+      .single();
+    token = row?.github_token ?? null;
+  }
   if (!token) return NextResponse.json({ error: "missing_github_token" }, { status: 400 });
 
   const r = await fetch("https://api.github.com/user/repos?per_page=100&sort=updated", {
