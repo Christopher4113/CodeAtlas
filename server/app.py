@@ -1,13 +1,22 @@
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
 import uuid
+import threading
 from fastapi import FastAPI, HTTPException
 from dotenv import load_dotenv
 
 load_dotenv()
 from models.pinecone_client import describe_index, ensure_index_exists, search_repos_by_owner
 from graphs.ping_graph import build_ping_graph
-from graphs.codeatlas_graph import build_codeatlas_graph
+from job_store import (
+    create_job,
+    get_job,
+    use_redis,
+    append_progress,
+    complete_job,
+    fail_job,
+)
+from run_analysis import run_analysis
 
 
 class StartAnalysisRequest(BaseModel):
@@ -35,11 +44,35 @@ class RepoSearchRequest(BaseModel):
     top_k: Optional[int] = 10
 
 
+def _run_analysis_in_process(
+    analysis_id: str,
+    owner: str,
+    repo: str,
+    branch: str,
+    github_token: str,
+) -> None:
+    """Run analysis in-process (thread) and update job_store (in-memory)."""
+    def on_progress(step: str, label: str) -> None:
+        append_progress(analysis_id, step, label)
+
+    def on_complete(report: Dict[str, Any]) -> None:
+        complete_job(analysis_id, report)
+
+    def on_error(message: str) -> None:
+        fail_job(analysis_id, message)
+
+    run_analysis(
+        owner=owner,
+        repo=repo,
+        branch=branch,
+        github_token=github_token,
+        on_progress=on_progress,
+        on_complete=on_complete,
+        on_error=on_error,
+    )
+
+
 app = FastAPI()
-
-JOBS: Dict[str, dict] = {}
-
-codeatlas_graph = build_codeatlas_graph()
 
 
 @app.post("/v1/analyses", response_model=StartAnalysisResponse)
@@ -47,65 +80,37 @@ def start_analysis(payload: StartAnalysisRequest):
     analysis_id = str(uuid.uuid4())
     branch = payload.branch or "main"
 
-    base_job = {
-        "analysis_id": analysis_id,
-        "status": "running",
-        "stage": "running",
-        "owner": payload.owner,
-        "repo": payload.repo,
-        "branch": branch,
-    }
-    JOBS[analysis_id] = base_job
+    create_job(analysis_id, payload.owner, payload.repo, branch)
 
-    try:
-        result = codeatlas_graph.invoke(
-            {
+    if use_redis():
+        from tasks import run_analysis_async
+        run_analysis_async.delay(
+            analysis_id=analysis_id,
+            owner=payload.owner,
+            repo=payload.repo,
+            branch=branch,
+            github_token=payload.github_token,
+        )
+    else:
+        thread = threading.Thread(
+            target=_run_analysis_in_process,
+            kwargs={
+                "analysis_id": analysis_id,
                 "owner": payload.owner,
                 "repo": payload.repo,
                 "branch": branch,
                 "github_token": payload.github_token,
-            }
+            },
+            daemon=True,
         )
-    except Exception as exc:
-        # Surface the underlying error to the client instead of
-        # returning a generic 500 so it is easier to debug.
-        error_message = str(exc)
-        JOBS[analysis_id] = {
-            **base_job,
-            "status": "error",
-            "stage": "failed",
-            "error": error_message,
-        }
-        return {
-            "analysis_id": analysis_id,
-            "status": "error",
-            "report": None,
-            "error": error_message,
-        }
+        thread.start()
 
-    report: Dict[str, Any] = {
-        "repo_summary": result.get("repo_summary"),
-        "architecture_mermaid": result.get("architecture_mermaid"),
-        "onboarding_doc": result.get("onboarding_doc"),
-        "dependency_mermaid": result.get("dependency_mermaid"),
-        "bug_risks": result.get("bug_risks"),
-        "frameworks_summary": result.get("frameworks_summary"),
-    }
-
-    JOBS[analysis_id] = {
-        **base_job,
-        "status": "completed",
-        "stage": "completed",
-        "report": report,
-    }
-
-    # For V1, run synchronously and return the report payload directly.
-    return {"analysis_id": analysis_id, "status": "completed", "report": report, "error": None}
+    return {"analysis_id": analysis_id, "status": "running", "report": None, "error": None}
 
 
 @app.get("/v1/analyses/{analysis_id}")
 def get_analysis(analysis_id: str):
-    job = JOBS.get(analysis_id)
+    job = get_job(analysis_id)
     if not job:
         raise HTTPException(status_code=404, detail="not_found")
     return job
@@ -113,7 +118,7 @@ def get_analysis(analysis_id: str):
 
 @app.get("/v1/analyses/{analysis_id}/report", response_model=AnalysisReportResponse)
 def get_analysis_report(analysis_id: str):
-    job = JOBS.get(analysis_id)
+    job = get_job(analysis_id)
     if not job or "report" not in job:
         raise HTTPException(status_code=404, detail="not_found")
     return {"analysis_id": analysis_id, "report": job["report"]}

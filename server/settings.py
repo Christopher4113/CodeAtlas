@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     # setup where the record text field is called "text".
     pinecone_embed_model: str = "llama-text-embed-v2"
     pinecone_text_field: str = "text"
+    # Optional: Redis URL for Celery broker and job state. If unset, analyses run in-process (thread).
+    redis_url: str | None = None
 
 
 settings = Settings()
