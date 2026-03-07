@@ -131,6 +131,23 @@ function getDisplayFrameworks(report: AnalysisReport | undefined): string {
   return fromSummary || "—";
 }
 
+/** Split markdown into sections by top-level headings (e.g. ## Key Folders, ## Gotchas). */
+function splitMarkdownIntoSections(markdown: string): string[] {
+  const lines = markdown.split("\n");
+  const sections: string[] = [];
+  let current: string[] = [];
+  for (const line of lines) {
+    const isTopHeading = /^#{1,2}\s+.+/.test(line);
+    if (isTopHeading && current.length) {
+      sections.push(current.join("\n").trim());
+      current = [];
+    }
+    current.push(line);
+  }
+  if (current.length) sections.push(current.join("\n").trim());
+  return sections.filter((s) => s.length > 0);
+}
+
 async function downloadOnboardingPdf(title: string, markdown: string) {
   const [jspdfModule, markedModule, html2canvasModule] = await Promise.all([
     import("jspdf"),
@@ -143,40 +160,60 @@ async function downloadOnboardingPdf(title: string, markdown: string) {
 
   const safeTitle = title.replace(/</g, "&lt;").replace(/[\\/:*?"<>|]/g, "-");
   if (!markedLib) throw new Error("marked parser not found");
-  const parsed = markedLib(markdown);
-  const htmlContent = typeof parsed === "string" ? parsed : await parsed;
 
-  const container = document.createElement("div");
-  container.style.position = "absolute";
-  container.style.left = "-9999px";
-  container.style.top = "0";
-  container.style.width = "210mm";
-  container.style.padding = "20mm";
-  container.style.fontFamily = "system-ui, -apple-system, sans-serif";
-  container.style.fontSize = "11pt";
-  container.style.lineHeight = "1.6";
-  container.style.color = "#1a1a1a";
-  container.style.background = "#fff";
-  container.innerHTML = `
-    <style>
-      .pdf-doc h1 { font-size: 1.5em; margin: 0 0 0.5em; border-bottom: 1px solid #eee; padding-bottom: 0.25em; }
-      .pdf-doc h2 { font-size: 1.25em; margin: 1em 0 0.35em; }
-      .pdf-doc h3 { font-size: 1.1em; margin: 0.75em 0 0.25em; }
-      .pdf-doc p { margin: 0 0 0.5em; }
-      .pdf-doc ul, .pdf-doc ol { margin: 0 0 0.5em; padding-left: 1.5em; }
-      .pdf-doc code { background: #f5f5f5; padding: 0.15em 0.4em; border-radius: 4px; font-size: 0.95em; }
-      .pdf-doc pre { background: #f5f5f5; padding: 0.75em; overflow-x: auto; margin: 0.5em 0; border-radius: 4px; font-size: 0.9em; }
-      .pdf-doc pre code { background: none; padding: 0; }
-      .pdf-doc table { border-collapse: collapse; width: 100%; margin: 0.5em 0; }
-      .pdf-doc th, .pdf-doc td { border: 1px solid #ddd; padding: 0.4em 0.6em; text-align: left; }
-      .pdf-doc th { background: #f5f5f5; font-weight: 600; }
-      .pdf-doc hr { border: none; border-top: 1px solid #eee; margin: 1em 0; }
-    </style>
-    <div class="pdf-doc">${htmlContent}</div>
+  // Tighter margins: ~8mm instead of 18mm so content fits better and sections break cleanly
+  const marginMm = 8;
+  const pageW = 210;
+  const contentW = pageW - 2 * marginMm;
+  const contentWidthPx = Math.floor((contentW / 25.4) * 96);
+
+  const pdfStyles = `
+    .pdf-doc, .pdf-doc * { box-sizing: border-box; }
+    .pdf-doc { width: 100%; max-width: 100%; overflow-wrap: break-word; word-break: break-word; overflow: hidden; }
+    .pdf-doc h1, .pdf-doc h2, .pdf-doc h3, .pdf-doc p, .pdf-doc ul, .pdf-doc ol, .pdf-doc li, .pdf-doc td, .pdf-doc th, .pdf-doc code, .pdf-doc pre { max-width: 100%; overflow-wrap: break-word; word-break: break-word; }
+    .pdf-doc h1 { font-size: 1.35em; margin: 0 0 0.4em; padding-bottom: 0.2em; border-bottom: 1px solid #ddd; }
+    .pdf-doc h2 { font-size: 1.15em; margin: 0.75em 0 0.3em; }
+    .pdf-doc h3 { font-size: 1em; margin: 0.5em 0 0.2em; }
+    .pdf-doc p { margin: 0 0 0.4em; min-height: 1em; }
+    .pdf-doc ul, .pdf-doc ol { margin: 0 0 0.4em; padding-left: 1.3em; }
+    .pdf-doc li { margin-bottom: 0.2em; }
+    .pdf-doc code { display: inline; background: #f0f0f0; padding: 0.1em 0.3em; border-radius: 2px; font-size: 0.9em; word-break: break-all; white-space: pre-wrap; }
+    .pdf-doc pre { background: #f0f0f0; padding: 0.5em; margin: 0.4em 0; border-radius: 2px; font-size: 0.8em; white-space: pre-wrap; word-break: break-all; overflow-wrap: anywhere; max-width: 100%; overflow: hidden; }
+    .pdf-doc pre code { background: none; padding: 0; display: block; white-space: pre-wrap; word-break: break-all; }
+    .pdf-doc table { border-collapse: collapse; width: 100%; max-width: 100%; margin: 0.4em 0; table-layout: fixed; }
+    .pdf-doc th, .pdf-doc td { border: 1px solid #ccc; padding: 0.3em 0.4em; text-align: left; word-break: break-word; overflow-wrap: break-word; min-width: 0; }
+    .pdf-doc th { background: #eee; font-weight: 600; }
+    .pdf-doc hr { border: none; border-top: 1px solid #ddd; margin: 0.6em 0; }
   `;
-  document.body.appendChild(container);
 
-  try {
+  const baseContainerStyles: Record<string, string> = {
+    position: "absolute",
+    left: "-9999px",
+    top: "0",
+    width: `${contentWidthPx}px`,
+    maxWidth: `${contentWidthPx}px`,
+    padding: "6px",
+    boxSizing: "border-box",
+    fontFamily: "system-ui, -apple-system, sans-serif",
+    fontSize: "10pt",
+    lineHeight: "1.45",
+    color: "#1a1a1a",
+    background: "#fff",
+    overflow: "hidden",
+    overflowWrap: "break-word",
+    wordBreak: "break-word",
+  };
+
+  const sections = splitMarkdownIntoSections(markdown);
+  const sectionCanvases: HTMLCanvasElement[] = [];
+
+  for (const sectionMd of sections) {
+    const parsed = markedLib(sectionMd);
+    const htmlContent = typeof parsed === "string" ? parsed : await parsed;
+    const container = document.createElement("div");
+    Object.assign(container.style, baseContainerStyles);
+    container.innerHTML = `<style>${pdfStyles}</style><div class="pdf-doc">${htmlContent}</div>`;
+    document.body.appendChild(container);
     const canvas = await html2canvas(container, {
       scale: 2,
       useCORS: true,
@@ -184,32 +221,54 @@ async function downloadOnboardingPdf(title: string, markdown: string) {
       backgroundColor: "#ffffff",
     });
     document.body.removeChild(container);
+    sectionCanvases.push(canvas);
+  }
 
-    const imgData = canvas.toDataURL("image/jpeg", 0.95);
+  try {
     const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-    const pageW = pdf.internal.pageSize.getWidth();
-    const pageH = pdf.internal.pageSize.getHeight();
-    const margin = 10;
-    const contentW = pageW - 2 * margin;
-    const contentH = pageH - 2 * margin;
-    const imgW = contentW;
-    const imgH = (canvas.height * contentW) / canvas.width;
-    let heightLeft = imgH;
-    let position = 0;
+    const pdfPageW = pdf.internal.pageSize.getWidth();
+    const pdfPageH = pdf.internal.pageSize.getHeight();
+    const contentWActual = pdfPageW - 2 * marginMm;
+    const contentHActualPdf = pdfPageH - 2 * marginMm;
+    const pageBottom = pdfPageH - marginMm;
 
-    pdf.addImage(imgData, "JPEG", margin, margin, imgW, imgH, undefined, "FAST");
-    heightLeft -= contentH;
+    let currentY = marginMm;
 
-    while (heightLeft > 0) {
-      position = heightLeft - imgH;
-      pdf.addPage();
-      pdf.addImage(imgData, "JPEG", margin, position, imgW, imgH, undefined, "FAST");
-      heightLeft -= contentH;
+    for (let i = 0; i < sectionCanvases.length; i++) {
+      const canvas = sectionCanvases[i];
+      const imgData = canvas.toDataURL("image/jpeg", 0.92);
+      const imgW = contentWActual;
+      const imgH = (canvas.height * contentWActual) / canvas.width;
+      const sectionH = imgH;
+
+      const fitsOnePage = sectionH <= contentHActualPdf;
+      const fitsOnCurrentPage = fitsOnePage && currentY + sectionH <= pageBottom;
+
+      if (fitsOnCurrentPage) {
+        pdf.addImage(imgData, "JPEG", marginMm, currentY, imgW, imgH, undefined, "FAST");
+        currentY += sectionH;
+      } else if (fitsOnePage) {
+        pdf.addPage();
+        pdf.addImage(imgData, "JPEG", marginMm, marginMm, imgW, imgH, undefined, "FAST");
+        currentY = marginMm + sectionH;
+      } else {
+        if (i > 0) pdf.addPage();
+        let heightLeft = sectionH;
+        let position = marginMm;
+        pdf.addImage(imgData, "JPEG", marginMm, position, imgW, imgH, undefined, "FAST");
+        heightLeft -= contentHActualPdf;
+        while (heightLeft > 0) {
+          position = position - contentHActualPdf;
+          pdf.addPage();
+          pdf.addImage(imgData, "JPEG", marginMm, position, imgW, imgH, undefined, "FAST");
+          heightLeft -= contentHActualPdf;
+        }
+        currentY = marginMm + (sectionH % contentHActualPdf) || contentHActualPdf;
+      }
     }
 
     pdf.save(`${safeTitle.replace(/\s+/g, "-")}-onboarding.pdf`);
   } catch (e) {
-    document.body.removeChild(container);
     console.error(e);
   }
 }
