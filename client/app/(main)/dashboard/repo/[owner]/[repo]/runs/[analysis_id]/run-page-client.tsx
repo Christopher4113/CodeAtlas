@@ -1,8 +1,44 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
+import ReactMarkdown from "react-markdown";
 import { MermaidDiagram } from "@/components/MermaidDiagram";
+
+function isCodeElement(node: React.ReactNode): boolean {
+  return React.isValidElement(node) && (node.type as unknown) === "code";
+}
+
+function OnboardingListItem({ children }: { children: React.ReactNode }) {
+  const arr = React.Children.toArray(children);
+  const first = arr[0];
+  const rest = arr.slice(1);
+  if (isCodeElement(first) && rest.length > 0) {
+    const descStr = rest.map((c) => (typeof c === "string" ? c : "")).join("").replace(/^\s*:\s*/, "").trim();
+    return (
+      <li className="list-none -ml-5 pl-5 grid grid-cols-[minmax(0,max-content)_1fr] gap-x-3 gap-y-0.5 py-1.5 items-baseline border-b border-[#21262d]/50 last:border-b-0">
+        <span className="font-mono text-xs text-[#7ee787] whitespace-nowrap shrink-0">{first}</span>
+        <span className="text-[#c6cdd5] text-sm">{descStr || rest}</span>
+      </li>
+    );
+  }
+  const single = arr.length === 1 && typeof arr[0] === "string";
+  const str = single ? (arr[0] as string) : "";
+  const colonIdx = str.indexOf(":");
+  if (single && colonIdx > 0 && colonIdx < 60) {
+    const pathPart = str.slice(0, colonIdx).replace(/\s+$/, "");
+    const descPart = str.slice(colonIdx + 1).replace(/^\s+/, "");
+    if (pathPart.length > 0 && descPart.length > 0) {
+      return (
+        <li className="list-none -ml-5 pl-5 grid grid-cols-[minmax(0,max-content)_1fr] gap-x-3 gap-y-0.5 py-1.5 items-baseline border-b border-[#21262d]/50 last:border-b-0">
+          <span className="font-mono text-xs text-[#7ee787] whitespace-nowrap shrink-0">{pathPart}</span>
+          <span className="text-[#c6cdd5] text-sm">{descPart}</span>
+        </li>
+      );
+    }
+  }
+  return <li className="leading-relaxed py-0.5">{children}</li>;
+}
 
 type RepoSummary = {
   short_overview?: string;
@@ -95,38 +131,87 @@ function getDisplayFrameworks(report: AnalysisReport | undefined): string {
   return fromSummary || "—";
 }
 
-function downloadOnboardingPdf(title: string, markdown: string) {
-  const html = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>${title.replace(/</g, "&lt;")} — Onboarding</title>
-  <style>
-    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; line-height: 1.6; white-space: pre-wrap; }
-    h1,h2,h3 { margin-top: 1.5em; }
-    code { background: #eee; padding: 0.2em 0.4em; border-radius: 4px; }
-    pre { background: #f5f5f5; padding: 1rem; overflow-x: auto; }
-    table { border-collapse: collapse; width: 100%; }
-    th, td { border: 1px solid #ddd; padding: 0.5rem 0.75rem; text-align: left; }
-  </style>
-</head>
-<body><pre>${markdown.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</pre></body>
-</html>`;
-  const blob = new Blob([html], { type: "text/html" });
-  const url = URL.createObjectURL(blob);
-  const win = window.open(url, "_blank", "noopener,noreferrer");
-  if (!win) {
-    URL.revokeObjectURL(url);
-    return;
+async function downloadOnboardingPdf(title: string, markdown: string) {
+  const [jspdfModule, markedModule, html2canvasModule] = await Promise.all([
+    import("jspdf"),
+    import("marked"),
+    import("html2canvas"),
+  ]);
+  const jsPDF = jspdfModule.default;
+  const markedLib = (markedModule as { marked?: (s: string) => string | Promise<string>; parse?: (s: string) => string | Promise<string>; default?: (s: string) => string | Promise<string> }).marked ?? (markedModule as { parse?: (s: string) => string | Promise<string> }).parse ?? (markedModule as { default?: (s: string) => string | Promise<string> }).default;
+  const html2canvas = html2canvasModule.default;
+
+  const safeTitle = title.replace(/</g, "&lt;").replace(/[\\/:*?"<>|]/g, "-");
+  if (!markedLib) throw new Error("marked parser not found");
+  const parsed = markedLib(markdown);
+  const htmlContent = typeof parsed === "string" ? parsed : await parsed;
+
+  const container = document.createElement("div");
+  container.style.position = "absolute";
+  container.style.left = "-9999px";
+  container.style.top = "0";
+  container.style.width = "210mm";
+  container.style.padding = "20mm";
+  container.style.fontFamily = "system-ui, -apple-system, sans-serif";
+  container.style.fontSize = "11pt";
+  container.style.lineHeight = "1.6";
+  container.style.color = "#1a1a1a";
+  container.style.background = "#fff";
+  container.innerHTML = `
+    <style>
+      .pdf-doc h1 { font-size: 1.5em; margin: 0 0 0.5em; border-bottom: 1px solid #eee; padding-bottom: 0.25em; }
+      .pdf-doc h2 { font-size: 1.25em; margin: 1em 0 0.35em; }
+      .pdf-doc h3 { font-size: 1.1em; margin: 0.75em 0 0.25em; }
+      .pdf-doc p { margin: 0 0 0.5em; }
+      .pdf-doc ul, .pdf-doc ol { margin: 0 0 0.5em; padding-left: 1.5em; }
+      .pdf-doc code { background: #f5f5f5; padding: 0.15em 0.4em; border-radius: 4px; font-size: 0.95em; }
+      .pdf-doc pre { background: #f5f5f5; padding: 0.75em; overflow-x: auto; margin: 0.5em 0; border-radius: 4px; font-size: 0.9em; }
+      .pdf-doc pre code { background: none; padding: 0; }
+      .pdf-doc table { border-collapse: collapse; width: 100%; margin: 0.5em 0; }
+      .pdf-doc th, .pdf-doc td { border: 1px solid #ddd; padding: 0.4em 0.6em; text-align: left; }
+      .pdf-doc th { background: #f5f5f5; font-weight: 600; }
+      .pdf-doc hr { border: none; border-top: 1px solid #eee; margin: 1em 0; }
+    </style>
+    <div class="pdf-doc">${htmlContent}</div>
+  `;
+  document.body.appendChild(container);
+
+  try {
+    const canvas = await html2canvas(container, {
+      scale: 2,
+      useCORS: true,
+      logging: false,
+      backgroundColor: "#ffffff",
+    });
+    document.body.removeChild(container);
+
+    const imgData = canvas.toDataURL("image/jpeg", 0.95);
+    const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    const margin = 10;
+    const contentW = pageW - 2 * margin;
+    const contentH = pageH - 2 * margin;
+    const imgW = contentW;
+    const imgH = (canvas.height * contentW) / canvas.width;
+    let heightLeft = imgH;
+    let position = 0;
+
+    pdf.addImage(imgData, "JPEG", margin, margin, imgW, imgH, undefined, "FAST");
+    heightLeft -= contentH;
+
+    while (heightLeft > 0) {
+      position = heightLeft - imgH;
+      pdf.addPage();
+      pdf.addImage(imgData, "JPEG", margin, position, imgW, imgH, undefined, "FAST");
+      heightLeft -= contentH;
+    }
+
+    pdf.save(`${safeTitle.replace(/\s+/g, "-")}-onboarding.pdf`);
+  } catch (e) {
+    document.body.removeChild(container);
+    console.error(e);
   }
-  win.addEventListener("load", () => {
-    URL.revokeObjectURL(url);
-    win.focus();
-    setTimeout(() => {
-      win.print();
-      win.close();
-    }, 300);
-  });
 }
 
 export default function RunPageClient({
@@ -272,10 +357,45 @@ export default function RunPageClient({
                       Copy to clipboard
                     </button>
                   </div>
-                  <div className="whitespace-pre-wrap text-sm text-[#c6cdd5]">{report.onboarding_doc}</div>
+                  <div className="prose-onboarding text-sm text-[#c6cdd5]">
+                    <ReactMarkdown
+                      components={{
+                        h1: ({ children }) => <h1 className="mb-2 mt-4 border-b border-[#21262d] pb-1 text-lg font-semibold text-[#ecf2f8] first:mt-0">{children}</h1>,
+                        h2: ({ children }) => <h2 className="mb-1.5 mt-3 text-base font-semibold text-[#ecf2f8]">{children}</h2>,
+                        h3: ({ children }) => <h3 className="mb-1 mt-2 text-sm font-semibold text-[#c6cdd5]">{children}</h3>,
+                        p: ({ children }) => <p className="mb-2 leading-relaxed">{children}</p>,
+                        ul: ({ children }) => (
+                          <ul className="mb-2 list-disc pl-5 space-y-0.5 has-[>li[class*='grid']]:list-none has-[>li[class*='grid']]:pl-0 has-[>li[class*='grid']]:border has-[>li[class*='grid']]:border-[#21262d] has-[>li[class*='grid']]:rounded-md has-[>li[class*='grid']]:overflow-hidden">
+                            {children}
+                          </ul>
+                        ),
+                        ol: ({ children }) => <ol className="mb-2 list-decimal pl-5 space-y-0.5">{children}</ol>,
+                        li: ({ children }) => <OnboardingListItem>{children}</OnboardingListItem>,
+                        code: ({ className, children }) => {
+                          const isBlock = className?.includes("language-");
+                          if (isBlock) {
+                            return <pre className="my-2 overflow-x-auto rounded border border-[#21262d] bg-[#161b22] p-3 text-xs"><code>{children}</code></pre>;
+                          }
+                          return <code className="rounded bg-[#161b22] px-1.5 py-0.5 font-mono text-xs">{children}</code>;
+                        },
+                        pre: ({ children }) => <>{children}</>,
+                        table: ({ children }) => <div className="my-2 overflow-x-auto"><table className="w-full border-collapse text-left">{children}</table></div>,
+                        thead: ({ children }) => <thead>{children}</thead>,
+                        tbody: ({ children }) => <tbody>{children}</tbody>,
+                        tr: ({ children }) => <tr className="border-b border-[#21262d]">{children}</tr>,
+                        th: ({ children }) => <th className="border-b border-[#21262d] bg-[#161b22] px-3 py-2 text-xs font-semibold text-[#ecf2f8]">{children}</th>,
+                        td: ({ children }) => <td className="px-3 py-2 text-xs">{children}</td>,
+                        hr: () => <hr className="my-3 border-[#21262d]" />,
+                        strong: ({ children }) => <strong className="font-semibold text-[#ecf2f8]">{children}</strong>,
+                        a: ({ href, children }) => <a href={href} className="text-[#58a6ff] hover:underline" target="_blank" rel="noopener noreferrer">{children}</a>,
+                      }}
+                    >
+                      {report.onboarding_doc}
+                    </ReactMarkdown>
+                  </div>
                 </div>
                 <p className="mt-2 text-xs text-[#8b949e]">
-                  Use &quot;Download as PDF&quot; to open a print dialog and save as PDF.
+                  Download saves a PDF file to your computer. Copy stores the raw markdown.
                 </p>
               </Section>
             )}
