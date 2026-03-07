@@ -6,12 +6,19 @@ from fastapi import FastAPI, HTTPException
 from dotenv import load_dotenv
 
 load_dotenv()
-from models.pinecone_client import describe_index, ensure_index_exists, search_repos_by_owner
+from models.pinecone_client import (
+    describe_index,
+    ensure_index_exists,
+    search_repos_by_owner,
+    delete_namespace as pinecone_delete_namespace,
+)
 from graphs.ping_graph import build_ping_graph
 from job_store import (
     create_job,
     get_job,
     use_redis,
+    set_task_id,
+    cancel_job,
     append_progress,
     complete_job,
     fail_job,
@@ -69,6 +76,7 @@ def _run_analysis_in_process(
         on_progress=on_progress,
         on_complete=on_complete,
         on_error=on_error,
+        analysis_id=analysis_id,
     )
 
 
@@ -84,13 +92,14 @@ def start_analysis(payload: StartAnalysisRequest):
 
     if use_redis():
         from tasks import run_analysis_async
-        run_analysis_async.delay(
+        result = run_analysis_async.delay(
             analysis_id=analysis_id,
             owner=payload.owner,
             repo=payload.repo,
             branch=branch,
             github_token=payload.github_token,
         )
+        set_task_id(analysis_id, result.id)
     else:
         thread = threading.Thread(
             target=_run_analysis_in_process,
@@ -114,6 +123,36 @@ def get_analysis(analysis_id: str):
     if not job:
         raise HTTPException(status_code=404, detail="not_found")
     return job
+
+
+@app.post("/v1/analyses/{analysis_id}/cancel")
+def cancel_analysis(analysis_id: str):
+    """
+    Cancel a running analysis: revoke Celery task (if any), delete Pinecone
+    namespace for this repo, and mark the job as cancelled.
+    """
+    job = get_job(analysis_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="not_found")
+    if job.get("status") != "running":
+        raise HTTPException(
+            status_code=400,
+            detail="not_running",
+        )
+    task_id = job.get("task_id")
+    if use_redis() and task_id:
+        from celery_app import app as celery_app
+        celery_app.control.revoke(task_id, terminate=True)
+    owner = job.get("owner") or ""
+    repo = job.get("repo") or ""
+    branch = job.get("branch") or "main"
+    namespace = f"{owner}/{repo}@{branch}"
+    try:
+        pinecone_delete_namespace(namespace)
+    except Exception:
+        pass
+    cancel_job(analysis_id)
+    return {"analysis_id": analysis_id, "status": "cancelled"}
 
 
 @app.get("/v1/analyses/{analysis_id}/report", response_model=AnalysisReportResponse)

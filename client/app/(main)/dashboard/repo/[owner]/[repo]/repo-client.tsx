@@ -12,7 +12,9 @@ export default function RepoClient({ owner, repo }: { owner: string; repo: strin
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [analysisId, setAnalysisId] = useState<string | null>(null);
-  const [status, setStatus] = useState<"running" | "completed" | "error" | null>(null);
+  const [status, setStatus] = useState<
+    "running" | "completed" | "error" | "cancelled" | null
+  >(null);
   const [progress, setProgress] = useState<ProgressStep[]>([]);
   const [jobError, setJobError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -65,7 +67,11 @@ export default function RepoClient({ owner, repo }: { owner: string; repo: strin
 
         const jobProgress = (data.progress ?? []) as ProgressStep[];
         setProgress(jobProgress);
-        const jobStatus = data.status as "running" | "completed" | "error";
+        const jobStatus = data.status as
+          | "running"
+          | "completed"
+          | "error"
+          | "cancelled";
         setStatus(jobStatus);
         if (data.error) setJobError(data.error);
 
@@ -78,6 +84,16 @@ export default function RepoClient({ owner, repo }: { owner: string; repo: strin
           setTimeout(() => {
             router.push(`/dashboard/repo/${owner}/${repo}/runs/${analysisId}`);
           }, 1800);
+        }
+        if (jobStatus === "cancelled") {
+          if (pollRef.current) {
+            clearInterval(pollRef.current);
+            pollRef.current = null;
+          }
+          setAnalysisId(null);
+          setStatus(null);
+          setProgress([]);
+          setJobError(null);
         }
       } catch {
         // keep polling
@@ -93,6 +109,32 @@ export default function RepoClient({ owner, repo }: { owner: string; repo: strin
       }
     };
   }, [analysisId, status, owner, repo, router]);
+
+  const cancelAnalysis = async () => {
+    if (!analysisId) return;
+    try {
+      const res = await fetch(`/api/analysis/${analysisId}/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setJobError((data?.error ?? data?.detail ?? "Cancel failed") as string);
+        return;
+      }
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+      setAnalysisId(null);
+      setStatus(null);
+      setProgress([]);
+      setJobError(null);
+      setError(null);
+    } catch {
+      setJobError("Cancel request failed");
+    }
+  };
 
   const showTerminal = analysisId != null && status != null;
   const dashboardUrl =
@@ -159,6 +201,17 @@ export default function RepoClient({ owner, repo }: { owner: string; repo: strin
 
         {showTerminal && (
           <div className="space-y-4">
+            <div className="flex items-center justify-end">
+              {status === "running" && (
+                <button
+                  type="button"
+                  onClick={cancelAnalysis}
+                  className="rounded-md border border-[#f85149] bg-transparent px-4 py-2 text-sm font-medium text-[#f85149] hover:bg-[#f85149]/10"
+                >
+                  Cancel analysis
+                </button>
+              )}
+            </div>
             <AnalysisTerminal
               owner={owner}
               repo={repo}

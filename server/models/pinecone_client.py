@@ -55,6 +55,20 @@ def describe_index():
     return index.describe_index_stats()
 
 
+def delete_namespace(namespace: str) -> None:
+    """
+    Delete all vectors in the given namespace (e.g. "owner/repo@branch").
+    Only supported for serverless indexes. Irreversible.
+    No-op if Pinecone is not configured or the operation is not supported.
+    """
+    try:
+        index = get_index()
+        index.delete_namespace(namespace=namespace)
+    except Exception:
+        # Pod-based indexes or missing config: ignore so cancel still succeeds
+        pass
+
+
 def upsert_records(namespace: str, records: Iterable[Mapping[str, Any]]) -> None:
     """
     Convenience helper that uses the integrated embedding index. Incoming
@@ -63,10 +77,15 @@ def upsert_records(namespace: str, records: Iterable[Mapping[str, Any]]) -> None
     - an `id` (or `_id`) field
     - a text field matching `settings.pinecone_text_field`
     - any additional metadata fields you want to filter on later
+
+    Records with empty or whitespace-only text are skipped (embedding API requires non-empty input).
     """
     index = get_index()
-    # Pinecone SDK expects a list; convert any iterable just in case.
-    payload = list(records)
+    text_field = settings.pinecone_text_field
+    payload = [
+        r for r in records
+        if r and (text_field in r) and str(r.get(text_field) or "").strip()
+    ]
     if not payload:
         return
     index.upsert_records(namespace, payload)
@@ -90,9 +109,11 @@ def upsert_repo_card(
     using Next.js", "repos with Supabase auth") and answers "why was this repo
     stored".
     """
+    # Embedding API requires non-empty text
+    safe_text = (text or "").strip() or "Repository indexed by CodeAtlas."
     record: Mapping[str, Any] = {
         "id": REPO_CARD_ID,
-        "text": text,
+        "text": safe_text,
         "owner": owner,
         "repo": repo,
         "branch": branch,

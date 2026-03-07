@@ -294,26 +294,31 @@ def node_chunk_and_upsert(state: CodeAtlasState) -> CodeAtlasState:
     for path, text in state["files_content"].items():
         if len(all_chunks) >= MAX_CHUNKS_FOR_V1:
             break
-        file_chunks = _chunk_file(path, text)
+        file_chunks = _chunk_file(path, text or "")
         remaining = MAX_CHUNKS_FOR_V1 - len(all_chunks)
         if remaining <= 0:
             break
-        all_chunks.extend(file_chunks[:remaining])
+        # Only include chunks with non-empty text (Pinecone embedding API rejects empty input)
+        valid = [c for c in file_chunks[:remaining] if (c.get("text") or "").strip()]
+        all_chunks.extend(valid)
 
     namespace = _build_namespace(state)
 
     # Upsert in small batches to avoid giant payloads. Pinecone's
     # integrated embedding API currently enforces a maximum batch size
     # of 96 records; using 32 keeps each request small and smooths out
-    # token-per-minute usage.
+    # token-per-minute usage. Skip batches that would have no valid records.
     batch_size = 32
     for i in range(0, len(all_chunks), batch_size):
         batch = all_chunks[i : i + batch_size]
         records = []
         for ch in batch:
+            raw_text = ch.get("text") or ""
+            if not raw_text.strip():
+                continue
             record: Dict[str, Any] = {
                 "id": ch["id"],
-                "text": ch["text"],
+                "text": raw_text,
                 "path": ch["path"],
                 "start_line": ch["start_line"],
                 "end_line": ch["end_line"],
@@ -323,7 +328,8 @@ def node_chunk_and_upsert(state: CodeAtlasState) -> CodeAtlasState:
                 "index": get_index_name(),
             }
             records.append(record)
-        upsert_records(namespace, records)
+        if records:
+            upsert_records(namespace, records)
 
     return {**state, "chunks": all_chunks}
 

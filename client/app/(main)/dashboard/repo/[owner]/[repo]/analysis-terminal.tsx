@@ -21,12 +21,13 @@ export function AnalysisTerminal({
   owner: string;
   repo: string;
   progress: ProgressStep[];
-  status: "running" | "completed" | "error";
+  status: "running" | "completed" | "error" | "cancelled";
   error?: string | null;
   dashboardUrl: string;
 }) {
   const nextLabel =
-    status === "running" && progress.length < TOTAL_STEPS
+    status === "running" &&
+    progress.length < TOTAL_STEPS
       ? (() => {
           const next: Record<number, string> = {
             0: "Cloning repository",
@@ -76,6 +77,9 @@ export function AnalysisTerminal({
               &gt; Open dashboard at {dashboardUrl}
             </div>
           </>
+        )}
+        {status === "cancelled" && (
+          <div className="text-[#f0883e] pt-1">&gt; Analysis cancelled.</div>
         )}
         {status === "error" && error && (
           <div className="text-red-400 pt-1">&gt; Error: {error}</div>

@@ -20,6 +20,7 @@ KEY_BRANCH = "branch"
 KEY_PROGRESS = "progress"
 KEY_REPORT = "report"
 KEY_ERROR = "error"
+KEY_TASK_ID = "task_id"
 
 
 def _redis_client():
@@ -84,8 +85,12 @@ def get_job(analysis_id: str) -> Optional[Dict[str, Any]]:
             "progress": progress,
             "report": report,
             "error": raw.get(KEY_ERROR) or None,
+            "task_id": raw.get(KEY_TASK_ID) or None,
         }
-    return _IN_MEMORY.get(analysis_id)
+    job = _IN_MEMORY.get(analysis_id)
+    if job is not None and isinstance(job, dict):
+        job = {**job, "task_id": job.get("task_id")}
+    return job
 
 
 def append_progress(analysis_id: str, step: str, label: str) -> None:
@@ -135,6 +140,46 @@ def fail_job(analysis_id: str, error_message: str) -> None:
         if analysis_id in _IN_MEMORY:
             _IN_MEMORY[analysis_id].update(
                 status="error", stage="failed", error=error_message
+            )
+
+
+def set_task_id(analysis_id: str, task_id: str) -> None:
+    """Store Celery task id so we can revoke it on cancel."""
+    r = _redis_client()
+    if r:
+        key = job_key(analysis_id)
+        r.hset(key, KEY_TASK_ID, task_id)
+    else:
+        if analysis_id in _IN_MEMORY:
+            _IN_MEMORY[analysis_id]["task_id"] = task_id
+
+
+def is_job_cancelled(analysis_id: str) -> bool:
+    """Return True if the job has been requested to cancel."""
+    job = get_job(analysis_id)
+    return job is not None and job.get("status") == "cancelled"
+
+
+def cancel_job(analysis_id: str) -> None:
+    """Mark job as cancelled and clear progress/report. Does not delete Pinecone data (caller does that)."""
+    r = _redis_client()
+    if r:
+        key = job_key(analysis_id)
+        r.hset(key, mapping={
+            KEY_STATUS: "cancelled",
+            KEY_STAGE: "cancelled",
+            KEY_PROGRESS: json.dumps([]),
+            KEY_REPORT: json.dumps(None),
+            KEY_ERROR: "Cancelled",
+        })
+    else:
+        if analysis_id in _IN_MEMORY:
+            _IN_MEMORY[analysis_id].update(
+                status="cancelled",
+                stage="cancelled",
+                progress=[],
+                report=None,
+                error="Cancelled",
             )
 
 

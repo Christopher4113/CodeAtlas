@@ -4,9 +4,10 @@ Used by both the in-process thread and the Celery task.
 """
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Optional
 
 from graphs.codeatlas_graph import build_codeatlas_graph
+from job_store import is_job_cancelled
 
 NODE_LABELS: Dict[str, str] = {
     "fetch_repo_tree": "Cloning repository",
@@ -30,10 +31,12 @@ def run_analysis(
     on_progress: Callable[[str, str], None],
     on_complete: Callable[[Dict[str, Any]], None],
     on_error: Callable[[str], None],
+    analysis_id: Optional[str] = None,
 ) -> None:
     """
     Run the CodeAtlas graph; call on_progress(step, label) per node,
     on_complete(report) on success, on_error(message) on failure.
+    If analysis_id is set, checks for cancellation between steps and calls on_error("Cancelled") if cancelled.
     """
     graph = build_codeatlas_graph()
     initial_input = {
@@ -48,6 +51,9 @@ def run_analysis(
         for mode, chunk in graph.stream(
             initial_input, stream_mode=["updates", "values"]
         ):
+            if analysis_id and is_job_cancelled(analysis_id):
+                on_error("Cancelled")
+                return
             if mode == "updates" and chunk:
                 node_name = next(iter(chunk.keys()), None)
                 if node_name:

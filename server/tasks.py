@@ -38,6 +38,7 @@ def run_analysis_task(
         on_progress=on_progress,
         on_complete=on_complete,
         on_error=on_error,
+        analysis_id=analysis_id,
     )
 
 
