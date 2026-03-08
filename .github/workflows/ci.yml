@@ -43,7 +43,7 @@ jobs:
 
       - name: Mypy
         run: |
-          mypy .
+          mypy --explicit-package-bases .
 
       - name: Pytest
         run: |
