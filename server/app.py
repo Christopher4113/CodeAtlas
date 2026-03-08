@@ -36,8 +36,8 @@ class StartAnalysisRequest(BaseModel):
 class StartAnalysisResponse(BaseModel):
     analysis_id: str
     status: str
-    report: Optional[Dict[str, Any]] = None
-    error: Optional[str] = None
+    report: dict | None = None
+    error: str | None = None
 
 
 class AnalysisReportResponse(BaseModel):
