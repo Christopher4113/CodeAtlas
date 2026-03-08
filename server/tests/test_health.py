@@ -4,6 +4,14 @@ from app import app
 client = TestClient(app)
 
 
+def test_health():
+    res = client.get("/v1/health")
+    assert res.status_code == 200
+    data = res.json()
+    assert data.get("status") == "ok"
+    assert "message" in data
+
+
 def test_start_and_get_analysis():
     payload = {
         "owner": "o",
@@ -37,6 +45,73 @@ def test_bedrock_health_route_exists():
 def test_graph_health_route_exists():
     res = client.post("/v1/graph/ping")
     assert res.status_code in (200, 500)
+
+
+def test_cancel_analysis_not_found():
+    res = client.post("/v1/analyses/00000000-0000-0000-0000-000000000000/cancel")
+    assert res.status_code == 404
+    assert res.json().get("detail") == "not_found"
+
+
+def test_cancel_analysis_not_running():
+    """Second cancel on same analysis returns 400 (job already cancelled)."""
+    payload = {"owner": "o", "repo": "r", "branch": "main", "github_token": "fake"}
+    start_res = client.post("/v1/analyses", json=payload)
+    assert start_res.status_code == 200
+    analysis_id = start_res.json()["analysis_id"]
+    first = client.post(f"/v1/analyses/{analysis_id}/cancel")
+    assert first.status_code == 200
+    second = client.post(f"/v1/analyses/{analysis_id}/cancel")
+    assert second.status_code == 400
+    assert second.json().get("detail") == "not_running"
+
+
+def test_cancel_analysis_success():
+    payload = {"owner": "o", "repo": "r", "branch": "main", "github_token": "fake"}
+    start_res = client.post("/v1/analyses", json=payload)
+    assert start_res.status_code == 200
+    analysis_id = start_res.json()["analysis_id"]
+    res = client.post(f"/v1/analyses/{analysis_id}/cancel")
+    assert res.status_code == 200
+    assert res.json().get("status") == "cancelled"
+    assert res.json().get("analysis_id") == analysis_id
+
+
+def test_chat_analysis_not_found():
+    res = client.post(
+        "/v1/analyses/00000000-0000-0000-0000-000000000000/chat",
+        json={"message": "hello"},
+    )
+    assert res.status_code == 404
+    assert res.json().get("detail") == "not_found"
+
+
+def test_chat_analysis_not_completed():
+    """Chat on a running (not yet completed) analysis returns 400."""
+    payload = {"owner": "o", "repo": "r", "branch": "main", "github_token": "fake"}
+    start_res = client.post("/v1/analyses", json=payload)
+    assert start_res.status_code == 200
+    analysis_id = start_res.json()["analysis_id"]
+    res = client.post(
+        f"/v1/analyses/{analysis_id}/chat",
+        json={"message": "How do I run this?"},
+    )
+    assert res.status_code == 400
+    assert res.json().get("detail") == "analysis_not_completed"
+
+
+def test_chat_message_required():
+    """Chat with empty message returns 400."""
+    payload = {"owner": "o", "repo": "r", "branch": "main", "github_token": "fake"}
+    start_res = client.post("/v1/analyses", json=payload)
+    assert start_res.status_code == 200
+    analysis_id = start_res.json()["analysis_id"]
+    res = client.post(
+        f"/v1/analyses/{analysis_id}/chat",
+        json={"message": "   "},
+    )
+    assert res.status_code == 400
+    assert res.json().get("detail") == "message_required"
 
 
 def test_get_analysis_report_not_found():
