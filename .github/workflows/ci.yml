@@ -46,5 +46,7 @@ jobs:
           mypy --explicit-package-bases .
 
       - name: Pytest
+        env:
+          PINECONE_API_KEY: "ci-dummy-key"
         run: |
           pytest -q
