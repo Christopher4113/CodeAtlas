@@ -425,7 +425,8 @@ def node_make_architecture_diagram(state: CodeAtlasState) -> CodeAtlasState:
     overview = summary.get("short_overview", "")
 
     llm = get_llm(max_tokens=1200)
-    prompt = f"""You are CodeAtlas. Given this repo summary, produce a SIMPLE architecture diagram as Mermaid code.
+    prompt = f"""You are CodeAtlas. Given this repo summary, produce a SIMPLE architecture
+diagram as Mermaid code.
 
 Overview: {overview}
 Main components: {', '.join(components) if components else 'unknown'}
@@ -540,7 +541,8 @@ def node_make_bug_risk_analysis(state: CodeAtlasState) -> CodeAtlasState:
     overview = summary.get("short_overview", "")
 
     llm = get_llm(max_tokens=800)
-    prompt = f"""You are CodeAtlas. Based on this repo summary, list potential bug risks or areas to watch.
+    prompt = f"""You are CodeAtlas. Based on this repo summary, list potential bug risks
+or areas to watch.
 
 Overview: {overview}
 Notes from analysis: {chr(10).join(notes) if notes else 'None'}
@@ -573,7 +575,7 @@ def node_format_frameworks(state: CodeAtlasState) -> CodeAtlasState:
 
 
 def node_upsert_pinecone_reason(state: CodeAtlasState) -> CodeAtlasState:
-    """Store a searchable 'reason' record in Pinecone for later discovery (e.g. by stack or purpose)."""
+    """Store a searchable 'reason' record in Pinecone for later discovery."""
     if state.get("error"):
         return state
     if "repo_summary" not in state or "chunks" not in state:
@@ -585,7 +587,8 @@ def node_upsert_pinecone_reason(state: CodeAtlasState) -> CodeAtlasState:
     components = summary.get("main_components", []) or []
 
     reason_text = (
-        f"Repository {state['owner']}/{state['repo']} (branch {state['branch']}) indexed by CodeAtlas. "
+        f"Repository {state['owner']}/{state['repo']} (branch {state['branch']}) "
+        "indexed by CodeAtlas. "
         f"Purpose: {overview} "
         f"Tech stack: {', '.join(stack)}. "
         f"Main components: {', '.join(components)}. "
