@@ -2,16 +2,20 @@ from __future__ import annotations
 
 import json
 import uuid
-from typing import TypedDict, Optional, List, Dict, Any
+from typing import Any, TypedDict
 
-from langgraph.graph import StateGraph, END
+from langgraph.graph import END, StateGraph
 
 from models.bedrock_llm import get_llm
-from models.github_client import fetch_repo_tree, fetch_multiple_file_contents, GitHubError
+from models.github_client import (
+    GitHubError,
+    fetch_multiple_file_contents,
+    fetch_repo_tree,
+)
 from models.pinecone_client import (
     ensure_index_exists,
-    upsert_records,
     get_index_name,
+    upsert_records,
     upsert_repo_card,
 )
 
@@ -20,7 +24,7 @@ class RepoFile(TypedDict):
     path: str
     sha: str
     size: int
-    content: Optional[str]
+    content: str | None
 
 
 class Chunk(TypedDict):
@@ -40,16 +44,16 @@ class CodeAtlasState(TypedDict, total=False):
     analysis_id: str  # When set, namespace becomes per-run for chatbot/latest tracking
 
     # Ingest
-    repo_tree: List[RepoFile]
-    files_content: Dict[str, str]
-    chunks: List[Chunk]
+    repo_tree: list[RepoFile]
+    files_content: dict[str, str]
+    chunks: list[Chunk]
 
     # Analysis
-    repo_summary: Dict[str, Any]
+    repo_summary: dict[str, Any]
     architecture_mermaid: str
     onboarding_doc: str
     dependency_mermaid: str
-    bug_risks: List[str]
+    bug_risks: list[str]
     frameworks_summary: str
 
     # Errors
@@ -97,7 +101,7 @@ def _should_keep_path(path: str) -> bool:
     return True
 
 
-def _prioritize_paths(files: List[RepoFile]) -> List[str]:
+def _prioritize_paths(files: list[RepoFile]) -> list[str]:
     """
     Heuristically order files so that README, docs, and configs come
     first, then source code. This lets us stay under embedding limits
@@ -158,7 +162,7 @@ def _prioritize_paths(files: List[RepoFile]) -> List[str]:
     return [f["path"] for f in sorted(files, key=lambda f: (score(f["path"]), f["path"]))]
 
 
-def _extract_json(text: str) -> Optional[Dict[str, Any]]:
+def _extract_json(text: str) -> dict[str, Any] | None:
     if not text:
         return None
     text = text.strip()
@@ -199,12 +203,12 @@ def _extract_mermaid(text: str) -> str:
     return text
 
 
-def _chunk_file(path: str, text: str, max_chars: int = 2400, overlap: int = 200) -> List[Chunk]:
+def _chunk_file(path: str, text: str, max_chars: int = 2400, overlap: int = 200) -> list[Chunk]:
     """
     Simple line-based chunking. We approximate 400–800 token chunks by
     limiting to ~2.4k characters with a small overlap window.
     """
-    chunks: List[Chunk] = []
+    chunks: list[Chunk] = []
     if not text:
         return chunks
 
@@ -293,7 +297,7 @@ def node_chunk_and_upsert(state: CodeAtlasState) -> CodeAtlasState:
 
     ensure_index_exists()
 
-    all_chunks: List[Chunk] = []
+    all_chunks: list[Chunk] = []
     for path, text in state["files_content"].items():
         if len(all_chunks) >= MAX_CHUNKS_FOR_V1:
             break
@@ -319,7 +323,7 @@ def node_chunk_and_upsert(state: CodeAtlasState) -> CodeAtlasState:
             raw_text = ch.get("text") or ""
             if not raw_text.strip():
                 continue
-            record: Dict[str, Any] = {
+            record: dict[str, Any] = {
                 "id": ch["id"],
                 "text": raw_text,
                 "path": ch["path"],
@@ -386,7 +390,7 @@ Return ONLY valid JSON with this exact shape:
 {{
   "short_overview": "2-4 sentence plain language overview of the repo and its purpose.",
   "how_to_run": "Step-by-step instructions to run the project locally, or 'unknown' if not clear.",
-  "main_components": ["short bullet point strings naming the key pieces (APIs, services, frontends, jobs, etc.)"],
+  "main_components": ["short bullet points: APIs, services, frontends, jobs, etc."],
   "stack": ["frameworks, languages, infra and major dependencies you can infer"],
   "notes": ["any other important observations, caveats, or TODOs"]
 }}
@@ -427,7 +431,8 @@ Overview: {overview}
 Main components: {', '.join(components) if components else 'unknown'}
 Stack: {', '.join(stack) if stack else 'unknown'}
 
-Output ONLY a Mermaid diagram (flowchart or graph). Keep it simple: 5-10 nodes max showing high-level layers or components (e.g. Frontend, API, DB, Auth). Use subgraph if helpful.
+Output ONLY a Mermaid diagram (flowchart or graph). Keep it simple: 5-10 nodes max
+showing high-level layers or components (e.g. Frontend, API, DB, Auth). Use subgraph if helpful.
 Example style:
 flowchart LR
   subgraph Client
@@ -461,7 +466,8 @@ def node_make_onboarding_doc(state: CodeAtlasState) -> CodeAtlasState:
             break
 
     llm = get_llm(max_tokens=2400)
-    prompt = f"""You are CodeAtlas. Create a ONE-PAGE onboarding document (plain text or markdown) for a new developer joining this repo.
+    prompt = f"""You are CodeAtlas. Create a ONE-PAGE onboarding document (plain text or markdown)
+for a new developer joining this repo.
 
 Repo: {state['owner']}/{state['repo']} (branch: {state['branch']})
 Overview: {summary.get('short_overview', '')}
@@ -512,12 +518,14 @@ Dependency/config excerpt:
 {package_snippet}
 ---
 
-Output ONLY a Mermaid diagram (flowchart or graph) showing key dependencies: app -> libraries/frameworks (e.g. Next.js -> React, API -> PostgreSQL). 5-12 nodes max.
+Output ONLY a Mermaid diagram (flowchart or graph) showing key dependencies:
+app -> libraries/frameworks (e.g. Next.js -> React, API -> PostgreSQL). 5-12 nodes max.
 Return ONLY the Mermaid code block. Start with ```mermaid and end with ```."""
 
     msg = llm.invoke(prompt)
     raw = (msg.content or "").strip()
-    mermaid = _extract_mermaid(raw) or "flowchart LR\n  App[Application]\n  Deps[Dependencies]\n  App --> Deps"
+    default_mermaid = "flowchart LR\n  App[Application]\n  Deps[Dependencies]\n  App --> Deps"
+    mermaid = _extract_mermaid(raw) or default_mermaid
     return {**state, "dependency_mermaid": mermaid}
 
 
@@ -537,7 +545,9 @@ def node_make_bug_risk_analysis(state: CodeAtlasState) -> CodeAtlasState:
 Overview: {overview}
 Notes from analysis: {chr(10).join(notes) if notes else 'None'}
 
-Return a JSON object with a single key "bug_risks" whose value is an array of short strings (3-8 items), e.g. ["No input validation on API", "Env vars in code"]. If you see no clear risks, return ["No major risks identified from summary."].
+Return a JSON object with a single key "bug_risks" whose value is an array of short strings
+(3-8 items), e.g. ["No input validation on API", "Env vars in code"].
+If you see no clear risks, return ["No major risks identified from summary."].
 Output ONLY valid JSON, no markdown or explanation."""
 
     msg = llm.invoke(prompt)
@@ -563,7 +573,7 @@ def node_format_frameworks(state: CodeAtlasState) -> CodeAtlasState:
 
 
 def node_upsert_pinecone_reason(state: CodeAtlasState) -> CodeAtlasState:
-    """Store a searchable 'reason' record in Pinecone so this repo can be found later (e.g. by stack or purpose)."""
+    """Store a searchable 'reason' record in Pinecone for later discovery (e.g. by stack or purpose)."""
     if state.get("error"):
         return state
     if "repo_summary" not in state or "chunks" not in state:
@@ -579,7 +589,7 @@ def node_upsert_pinecone_reason(state: CodeAtlasState) -> CodeAtlasState:
         f"Purpose: {overview} "
         f"Tech stack: {', '.join(stack)}. "
         f"Main components: {', '.join(components)}. "
-        "Indexed for: architecture diagrams, onboarding docs, dependency mapping, bug risk analysis, and framework detection."
+        "Indexed for: architecture, onboarding, dependencies, bug risks, frameworks."
     )
     namespace = _build_namespace(state)
     upsert_repo_card(

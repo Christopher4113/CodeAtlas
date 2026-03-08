@@ -4,10 +4,10 @@ LangGraph flow for the run-page chatbot. Retrieves context from Pinecone
 """
 from __future__ import annotations
 
-from typing import TypedDict, List, Any, Optional
+from typing import TypedDict
 
-from langgraph.graph import StateGraph, END
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langgraph.graph import END, StateGraph
 
 from models.bedrock_llm import get_llm
 from models.pinecone_client import search_in_namespace
@@ -17,13 +17,13 @@ class ChatState(TypedDict, total=False):
     namespace: str
     fallback_namespace: str  # e.g. owner/repo@branch when per-run namespace is empty
     query: str
-    history: List[dict]  # [{ "role": "user"|"assistant", "content": str }]
-    retrieved_docs: List[dict]
+    history: list[dict]  # [{ "role": "user"|"assistant", "content": str }]
+    retrieved_docs: list[dict]
     report_context: str  # Summary/report from the analysis so LLM can answer without Pinecone
     reply: str
 
 
-def _format_docs(docs: List[dict]) -> str:
+def _format_docs(docs: list[dict]) -> str:
     if not docs:
         return "(No relevant code or docs found for this run.)"
     parts = []
@@ -35,10 +35,10 @@ def _format_docs(docs: List[dict]) -> str:
     return "\n\n---\n\n".join(parts) if parts else "(No relevant snippets.)"
 
 
-def _merge_docs_by_id(doc_lists: List[List[dict]], max_total: int = 14) -> List[dict]:
+def _merge_docs_by_id(doc_lists: list[list[dict]], max_total: int = 14) -> list[dict]:
     """Merge search results from multiple queries, dedupe by id, keep highest score."""
     seen: set = set()
-    out: List[dict] = []
+    out: list[dict] = []
     for doc_list in doc_lists:
         for d in doc_list:
             vid = d.get("id") or id(d)
@@ -63,7 +63,7 @@ def node_retrieve(state: ChatState) -> ChatState:
     # If empty, try base namespace (older runs or shared index)
     if not docs and fallback:
         docs = search_in_namespace(fallback, query, top_k=12)
-    # Second pass: generic query to pull in repo card / README / how to run (same ns we got results from, or both)
+    # Second pass: generic query for repo card / README / how to run (same ns or both)
     active_ns = namespace if (namespace and docs) else (fallback or namespace)
     if active_ns:
         generic = search_in_namespace(
@@ -94,9 +94,9 @@ def node_generate(state: ChatState) -> ChatState:
         "You are CodeAtlas assistant. You answer questions about this codebase using the "
         "analysis report and retrieved context below. Prefer the analysis report for things "
         "like how to run, overview, and stack; use retrieved code/docs for file-level details. "
-        "If neither has enough information, say so briefly. Be concise and cite file paths when relevant."
+        "If neither has enough, say so briefly. Be concise and cite file paths when relevant."
     )
-    messages: List[BaseMessage] = [SystemMessage(content=system)]
+    messages: list[BaseMessage] = [SystemMessage(content=system)]
 
     for h in history[-10:]:  # last 10 turns
         role = h.get("role")

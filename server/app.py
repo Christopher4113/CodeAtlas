@@ -1,27 +1,30 @@
-from pydantic import BaseModel
-from typing import Optional, Dict, Any, List
-import uuid
+import os
 import threading
-from fastapi import FastAPI, HTTPException
+import uuid
+from typing import Any
+
 from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 
 load_dotenv()
+
+from graphs.ping_graph import build_ping_graph
+from job_store import (
+    append_progress,
+    cancel_job,
+    complete_job,
+    create_job,
+    fail_job,
+    get_job,
+    set_task_id,
+    use_redis,
+)
 from models.pinecone_client import (
+    delete_namespace as pinecone_delete_namespace,
     describe_index,
     ensure_index_exists,
     search_repos_by_owner,
-    delete_namespace as pinecone_delete_namespace,
-)
-from graphs.ping_graph import build_ping_graph
-from job_store import (
-    create_job,
-    get_job,
-    use_redis,
-    set_task_id,
-    cancel_job,
-    append_progress,
-    complete_job,
-    fail_job,
 )
 from run_analysis import run_analysis
 
@@ -29,7 +32,7 @@ from run_analysis import run_analysis
 class StartAnalysisRequest(BaseModel):
     owner: str
     repo: str
-    branch: Optional[str] = None
+    branch: str | None = None
     github_token: str
 
 
@@ -42,18 +45,19 @@ class StartAnalysisResponse(BaseModel):
 
 class AnalysisReportResponse(BaseModel):
     analysis_id: str
-    report: Dict[str, Any]
+    report: dict[str, Any]
 
 
 class RepoSearchRequest(BaseModel):
     query: str
     owner: str
-    top_k: Optional[int] = 10
+    top_k: int | None = 10
 
 
 class ChatRequest(BaseModel):
     message: str
-    history: Optional[List[Dict[str, str]]] = None  # [{ "role": "user"|"assistant", "content": "..." }]
+    # [{ "role": "user"|"assistant", "content": "..." }]
+    history: list[dict[str, str]] | None = None
 
 
 def _run_analysis_in_process(
@@ -67,7 +71,7 @@ def _run_analysis_in_process(
     def on_progress(step: str, label: str) -> None:
         append_progress(analysis_id, step, label)
 
-    def on_complete(report: Dict[str, Any]) -> None:
+    def on_complete(report: dict[str, Any]) -> None:
         complete_job(analysis_id, report)
 
     def on_error(message: str) -> None:
@@ -163,8 +167,8 @@ def cancel_analysis(analysis_id: str):
     return {"analysis_id": analysis_id, "status": "cancelled"}
 
 
-def _analysis_namespace(analysis_id: str) -> tuple[Optional[str], Optional[str], Optional[dict]]:
-    """Return (namespace, fallback_namespace, job) for this analysis, or (None, None, None) if not found."""
+def _analysis_namespace(analysis_id: str) -> tuple[str | None, str | None, dict | None]:
+    """Return (namespace, fallback_namespace, job) or (None, None, None) if not found."""
     job = get_job(analysis_id)
     if not job:
         return None, None, None
@@ -176,7 +180,7 @@ def _analysis_namespace(analysis_id: str) -> tuple[Optional[str], Optional[str],
     return namespace, fallback, job
 
 
-def _format_report_for_chat(report: Optional[dict]) -> str:
+def _format_report_for_chat(report: dict | None) -> str:
     """Build a short text summary of the analysis report for the chatbot context."""
     if not report:
         return ""
@@ -193,17 +197,18 @@ def _format_report_for_chat(report: Optional[dict]) -> str:
         components = summary.get("main_components")
         if components:
             parts.append(f"Main components: {', '.join(str(c) for c in components[:10])}")
-    if report.get("frameworks_summary") and str(report.get("frameworks_summary")).strip() != "Unknown":
-        parts.append(f"Frameworks: {report['frameworks_summary']}")
+    fw = report.get("frameworks_summary")
+    if fw and str(fw).strip() != "Unknown":
+        parts.append(f"Frameworks: {fw}")
     return "\n".join(parts) if parts else ""
 
 
 @app.post("/v1/analyses/{analysis_id}/chat")
 def chat_for_analysis(analysis_id: str, payload: ChatRequest):
     """
-    Chat about this analysis run using context from its Pinecone namespace and the stored report.
-    Uses a LangGraph flow: retrieve from namespace (with fallback) -> generate reply with LLM.
-    Report summary is always injected so "how do I run" etc. can be answered even when Pinecone returns nothing.
+    Chat about this analysis using Pinecone namespace and stored report.
+    LangGraph: retrieve (with fallback) -> generate reply. Report summary is always
+    injected so "how do I run" etc. can be answered when Pinecone returns nothing.
     """
     namespace, fallback, job = _analysis_namespace(analysis_id)
     if not job:
@@ -273,7 +278,6 @@ def graph_ping():
 
 @app.get("/v1/bedrock/whoami")
 def bedrock_whoami():
-    import os
     return {
         "region": os.getenv("AWS_REGION"),
         "model_id": os.getenv("BEDROCK_MODEL_ID"),

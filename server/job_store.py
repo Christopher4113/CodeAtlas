@@ -5,11 +5,11 @@ Used by FastAPI (read/write) and Celery task (write progress and result).
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from settings import settings
 
-_IN_MEMORY: Dict[str, dict] = {}
+_IN_MEMORY: dict[str, dict] = {}
 
 REDIS_KEY_PREFIX = "codeatlas:job:"
 KEY_STATUS = "status"
@@ -65,7 +65,7 @@ def create_job(analysis_id: str, owner: str, repo: str, branch: str) -> None:
         _IN_MEMORY[analysis_id] = payload
 
 
-def get_job(analysis_id: str) -> Optional[Dict[str, Any]]:
+def get_job(analysis_id: str) -> dict[str, Any] | None:
     r = _redis_client()
     if r:
         key = job_key(analysis_id)
@@ -100,7 +100,7 @@ def append_progress(analysis_id: str, step: str, label: str) -> None:
         job = get_job(analysis_id)
         if not job:
             return
-        progress: List[Dict[str, Any]] = list(job.get("progress") or [])
+        progress: list[dict[str, Any]] = list(job.get("progress") or [])
         progress.append({"step": step, "label": label, "status": "done"})
         r.hset(key, KEY_PROGRESS, json.dumps(progress))
     else:
@@ -110,7 +110,7 @@ def append_progress(analysis_id: str, step: str, label: str) -> None:
             )
 
 
-def complete_job(analysis_id: str, report: Dict[str, Any]) -> None:
+def complete_job(analysis_id: str, report: dict[str, Any]) -> None:
     r = _redis_client()
     if r:
         key = job_key(analysis_id)
@@ -161,7 +161,7 @@ def is_job_cancelled(analysis_id: str) -> bool:
 
 
 def cancel_job(analysis_id: str) -> None:
-    """Mark job as cancelled and clear progress/report. Does not delete Pinecone data (caller does that)."""
+    """Mark job as cancelled and clear progress/report. Caller deletes Pinecone data."""
     r = _redis_client()
     if r:
         key = job_key(analysis_id)

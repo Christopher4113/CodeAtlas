@@ -4,12 +4,13 @@ Used by both the in-process thread and the Celery task.
 """
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List, Optional
+from collections.abc import Callable
+from typing import Any
 
 from graphs.codeatlas_graph import build_codeatlas_graph
 from job_store import is_job_cancelled
 
-NODE_LABELS: Dict[str, str] = {
+NODE_LABELS: dict[str, str] = {
     "fetch_repo_tree": "Cloning repository",
     "fetch_file_contents": "Ingesting files",
     "chunk_and_upsert": "Classifying file types",
@@ -29,17 +30,17 @@ def run_analysis(
     branch: str,
     github_token: str,
     on_progress: Callable[[str, str], None],
-    on_complete: Callable[[Dict[str, Any]], None],
+    on_complete: Callable[[dict[str, Any]], None],
     on_error: Callable[[str], None],
-    analysis_id: Optional[str] = None,
+    analysis_id: str | None = None,
 ) -> None:
     """
     Run the CodeAtlas graph; call on_progress(step, label) per node,
     on_complete(report) on success, on_error(message) on failure.
-    If analysis_id is set, checks for cancellation between steps and calls on_error("Cancelled") if cancelled.
+    If analysis_id is set, checks for cancellation and calls on_error("Cancelled") if cancelled.
     """
     graph = build_codeatlas_graph()
-    initial_input: Dict[str, Any] = {
+    initial_input: dict[str, Any] = {
         "owner": owner,
         "repo": repo,
         "branch": branch,
@@ -49,7 +50,7 @@ def run_analysis(
         initial_input["analysis_id"] = analysis_id
 
     try:
-        last_state: Dict[str, Any] = {}
+        last_state: dict[str, Any] = {}
         for mode, chunk in graph.stream(
             initial_input, stream_mode=["updates", "values"]
         ):
@@ -66,7 +67,7 @@ def run_analysis(
             elif mode == "values" and isinstance(chunk, dict):
                 last_state = chunk
 
-        report: Dict[str, Any] = {
+        report: dict[str, Any] = {
             "repo_summary": last_state.get("repo_summary"),
             "architecture_mermaid": last_state.get("architecture_mermaid"),
             "onboarding_doc": last_state.get("onboarding_doc"),

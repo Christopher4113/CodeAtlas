@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from functools import lru_cache
-from typing import Iterable, Mapping, Any, List
+from typing import Any
 
-from pinecone import Pinecone, ServerlessSpec
+from pinecone import Pinecone
 
 from settings import settings
 
@@ -126,7 +127,7 @@ def search_in_namespace(
     namespace: str,
     query_text: str,
     top_k: int = 12,
-) -> List[Mapping[str, Any]]:
+) -> list[Mapping[str, Any]]:
     """
     Semantic search within a single namespace (e.g. one analysis run).
     Returns list of matches with score and metadata (text, path, etc.) for chatbot context.
@@ -145,7 +146,7 @@ def search_in_namespace(
         matches = search_result.get("matches") or []
     else:
         matches = getattr(search_result, "matches", None) or []
-    results: List[Mapping[str, Any]] = []
+    results: list[Mapping[str, Any]] = []
     for m in matches:
         score = m.get("score")
         if score is None:
@@ -161,7 +162,7 @@ def search_in_namespace(
     return results
 
 
-def list_namespaces_for_owner(owner: str) -> List[str]:
+def list_namespaces_for_owner(owner: str) -> list[str]:
     """
     Return all index namespaces that belong to the given owner.
     Namespace format is "owner/repo@branch", so we filter by prefix "owner/".
@@ -182,7 +183,7 @@ def search_repos_by_owner(
     query_text: str,
     top_k: int = 10,
     max_namespaces: int = 50,
-) -> List[Mapping[str, Any]]:
+) -> list[Mapping[str, Any]]:
     """
     Search only within repos belonging to the given owner. Returns a list of
     matching repos (one per namespace) with score and snippet, sorted by score.
@@ -194,7 +195,7 @@ def search_repos_by_owner(
 
     # Cap to avoid too many API calls
     namespaces_to_search = owner_ns[:max_namespaces]
-    results: List[Mapping[str, Any]] = []
+    results: list[Mapping[str, Any]] = []
 
     for namespace in namespaces_to_search:
         try:
@@ -227,7 +228,10 @@ def search_repos_by_owner(
         text_snippet = ""
         if isinstance(best.get("metadata"), dict) and "text" in best["metadata"]:
             raw = best["metadata"]["text"]
-            text_snippet = (raw[:300] + "…") if isinstance(raw, str) and len(raw) > 300 else (raw or "")
+            if isinstance(raw, str) and len(raw) > 300:
+                text_snippet = raw[:300] + "…"
+            else:
+                text_snippet = raw or ""
         results.append({
             "owner": ns_owner,
             "repo": repo,

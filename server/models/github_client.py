@@ -1,5 +1,4 @@
 import base64
-from typing import List, Dict
 
 import httpx
 
@@ -8,7 +7,7 @@ class GitHubError(RuntimeError):
     pass
 
 
-def _auth_headers(token: str) -> Dict[str, str]:
+def _auth_headers(token: str) -> dict[str, str]:
     headers = {
         "Accept": "application/vnd.github+json",
         "User-Agent": "codeatlas-backend",
@@ -19,7 +18,7 @@ def _auth_headers(token: str) -> Dict[str, str]:
     return headers
 
 
-def fetch_repo_tree(owner: str, repo: str, branch: str, token: str) -> List[Dict]:
+def fetch_repo_tree(owner: str, repo: str, branch: str, token: str) -> list[dict]:
     """
     Fetch the full file tree (blobs only) for a repo/branch.
     """
@@ -32,7 +31,7 @@ def fetch_repo_tree(owner: str, repo: str, branch: str, token: str) -> List[Dict
         )
     data = resp.json()
     tree = data.get("tree", [])
-    files: List[Dict] = []
+    files: list[dict] = []
     for item in tree:
         if item.get("type") != "blob":
             continue
@@ -79,14 +78,14 @@ def fetch_multiple_file_contents(
     owner: str,
     repo: str,
     branch: str,
-    paths: List[str],
+    paths: list[str],
     token: str,
     max_bytes: int = 200_000,
-) -> Dict[str, str]:
+) -> dict[str, str]:
     """
     Fetch contents for a set of paths with a simple size cap.
     """
-    out: Dict[str, str] = {}
+    out: dict[str, str] = {}
     for path in paths:
         text = fetch_file_content(owner, repo, branch, path, token)
         if not text:
