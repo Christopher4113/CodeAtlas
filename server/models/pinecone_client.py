@@ -122,6 +122,45 @@ def upsert_repo_card(
     upsert_records(namespace, [record])
 
 
+def search_in_namespace(
+    namespace: str,
+    query_text: str,
+    top_k: int = 12,
+) -> List[Mapping[str, Any]]:
+    """
+    Semantic search within a single namespace (e.g. one analysis run).
+    Returns list of matches with score and metadata (text, path, etc.) for chatbot context.
+    """
+    if not query_text or not query_text.strip():
+        return []
+    try:
+        index = get_index()
+        search_result = index.search(
+            namespace=namespace,
+            query={"inputs": {"text": query_text.strip()}, "top_k": min(top_k, 24)},
+        )
+    except Exception:
+        return []
+    if isinstance(search_result, dict):
+        matches = search_result.get("matches") or []
+    else:
+        matches = getattr(search_result, "matches", None) or []
+    results: List[Mapping[str, Any]] = []
+    for m in matches:
+        score = m.get("score")
+        if score is None:
+            continue
+        meta = m.get("metadata") or {}
+        text = meta.get(settings.pinecone_text_field) or meta.get("text") or ""
+        results.append({
+            "score": float(score),
+            "text": text[:2000] if isinstance(text, str) else str(text)[:2000],
+            "path": meta.get("path"),
+            "id": m.get("id"),
+        })
+    return results
+
+
 def list_namespaces_for_owner(owner: str) -> List[str]:
     """
     Return all index namespaces that belong to the given owner.

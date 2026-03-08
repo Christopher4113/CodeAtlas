@@ -39,12 +39,14 @@ def run_analysis(
     If analysis_id is set, checks for cancellation between steps and calls on_error("Cancelled") if cancelled.
     """
     graph = build_codeatlas_graph()
-    initial_input = {
+    initial_input: Dict[str, Any] = {
         "owner": owner,
         "repo": repo,
         "branch": branch,
         "github_token": github_token,
     }
+    if analysis_id:
+        initial_input["analysis_id"] = analysis_id
 
     try:
         last_state: Dict[str, Any] = {}

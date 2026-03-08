@@ -273,6 +273,8 @@ async function downloadOnboardingPdf(title: string, markdown: string) {
   }
 }
 
+type ChatMessage = { role: "user" | "assistant"; content: string };
+
 export default function RunPageClient({
   owner,
   repo,
@@ -285,6 +287,9 @@ export default function RunPageClient({
   const [data, setData] = useState<AnalysisStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -321,6 +326,36 @@ export default function RunPageClient({
 
   const report = data?.report;
   const completed = data?.status === "completed" && report;
+
+  const sendChat = async () => {
+    const msg = chatInput.trim();
+    if (!msg || chatLoading) return;
+    setChatInput("");
+    const userMsg: ChatMessage = { role: "user", content: msg };
+    setChatMessages((prev) => [...prev, userMsg]);
+    setChatLoading(true);
+    try {
+      const res = await fetch(`/api/analysis/${analysis_id}/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: msg,
+          history: chatMessages.map((m) => ({ role: m.role, content: m.content })),
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setChatMessages((prev) => [...prev, { role: "assistant", content: `Error: ${json?.error ?? json?.detail ?? "Request failed"}` }]);
+        return;
+      }
+      const reply = (json.reply as string) || "No reply.";
+      setChatMessages((prev) => [...prev, { role: "assistant", content: reply }]);
+    } catch (e) {
+      setChatMessages((prev) => [...prev, { role: "assistant", content: `Error: ${e instanceof Error ? e.message : "Request failed"}` }]);
+    } finally {
+      setChatLoading(false);
+    }
+  };
 
   return (
     <div className="min-h-screen w-full bg-[#0d1117]">
@@ -468,6 +503,78 @@ export default function RunPageClient({
                 </ul>
               </Section>
             )}
+
+            <Section title="Ask about this run">
+              <p className="mb-3 text-sm text-[#8b949e]">
+                Ask questions about this codebase. Answers use the indexed content from this analysis run (most recent for this repo).
+              </p>
+              <div className="rounded-lg border border-[#21262d] bg-[#0d1117] overflow-hidden flex flex-col min-h-[280px]">
+                <div className="flex-1 overflow-y-auto p-3 space-y-3 min-h-[180px] max-h-[320px]">
+                  {chatMessages.length === 0 && (
+                    <p className="text-xs text-[#6e7681]">No messages yet. Ask something like: &quot;How do I run this project?&quot; or &quot;Where is auth handled?&quot;</p>
+                  )}
+                  {chatMessages.map((m, i) => (
+                    <div
+                      key={i}
+                      className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
+                    >
+                      <div
+                        className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
+                          m.role === "user"
+                            ? "bg-[#238636] text-white"
+                            : "bg-[#21262d] text-[#c6cdd5] border border-[#30363d]"
+                        }`}
+                      >
+                        {m.role === "assistant" ? (
+                          <div className="prose-inline text-sm whitespace-pre-wrap break-words">
+                            <ReactMarkdown
+                              components={{
+                                p: ({ children }) => <p className="mb-1 last:mb-0">{children}</p>,
+                                ul: ({ children }) => <ul className="list-disc pl-4 mb-1">{children}</ul>,
+                                ol: ({ children }) => <ol className="list-decimal pl-4 mb-1">{children}</ol>,
+                                li: ({ children }) => <li className="mb-0.5">{children}</li>,
+                                code: ({ children }) => <code className="rounded bg-[#161b22] px-1 font-mono text-xs">{children}</code>,
+                                strong: ({ children }) => <strong className="font-semibold text-[#ecf2f8]">{children}</strong>,
+                              }}
+                            >
+                              {m.content}
+                            </ReactMarkdown>
+                          </div>
+                        ) : (
+                          <span className="whitespace-pre-wrap break-words">{m.content}</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {chatLoading && (
+                    <div className="flex justify-start">
+                      <div className="rounded-lg px-3 py-2 text-sm bg-[#21262d] text-[#8b949e] border border-[#30363d]">
+                        Thinking…
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="border-t border-[#21262d] p-2 flex gap-2">
+                  <input
+                    type="text"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && sendChat()}
+                    placeholder="Ask about this codebase…"
+                    className="flex-1 rounded-md border border-[#30363d] bg-[#161b22] px-3 py-2 text-sm text-[#c6cdd5] placeholder-[#6e7681] focus:outline-none focus:ring-1 focus:ring-[#58a6ff]"
+                    disabled={chatLoading}
+                  />
+                  <button
+                    type="button"
+                    onClick={sendChat}
+                    disabled={chatLoading || !chatInput.trim()}
+                    className="rounded-md border border-[#21262d] bg-[#238636] px-4 py-2 text-sm font-medium text-white hover:bg-[#2ea043] disabled:opacity-50 disabled:pointer-events-none"
+                  >
+                    Send
+                  </button>
+                </div>
+              </div>
+            </Section>
           </div>
         )}
       </div>

@@ -37,6 +37,7 @@ class CodeAtlasState(TypedDict, total=False):
     repo: str
     branch: str
     github_token: str
+    analysis_id: str  # When set, namespace becomes per-run for chatbot/latest tracking
 
     # Ingest
     repo_tree: List[RepoFile]
@@ -242,9 +243,11 @@ def _chunk_file(path: str, text: str, max_chars: int = 2400, overlap: int = 200)
 
 
 def _build_namespace(state: CodeAtlasState) -> str:
-    # Use a simple namespace so we can re-index different branches
-    # independently if needed.
-    return f"{state['owner']}/{state['repo']}@{state['branch']}"
+    # Per-run namespace when analysis_id is set (for chatbot and latest-run context).
+    # Otherwise owner/repo@branch for backward compatibility.
+    base = f"{state['owner']}/{state['repo']}@{state['branch']}"
+    aid = state.get("analysis_id")
+    return f"{base}@{aid}" if aid else base
 
 
 def node_fetch_repo_tree(state: CodeAtlasState) -> CodeAtlasState:

@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import uuid
 import threading
 from fastapi import FastAPI, HTTPException
@@ -51,6 +51,11 @@ class RepoSearchRequest(BaseModel):
     top_k: Optional[int] = 10
 
 
+class ChatRequest(BaseModel):
+    message: str
+    history: Optional[List[Dict[str, str]]] = None  # [{ "role": "user"|"assistant", "content": "..." }]
+
+
 def _run_analysis_in_process(
     analysis_id: str,
     owner: str,
@@ -82,6 +87,9 @@ def _run_analysis_in_process(
 
 app = FastAPI()
 
+@app.get("/v1/health")
+def health():
+    return {"status": "ok", "message": "CodeAtlas server is running"}
 
 @app.post("/v1/analyses", response_model=StartAnalysisResponse)
 def start_analysis(payload: StartAnalysisRequest):
@@ -146,13 +154,77 @@ def cancel_analysis(analysis_id: str):
     owner = job.get("owner") or ""
     repo = job.get("repo") or ""
     branch = job.get("branch") or "main"
-    namespace = f"{owner}/{repo}@{branch}"
+    namespace = f"{owner}/{repo}@{branch}@{analysis_id}"
     try:
         pinecone_delete_namespace(namespace)
     except Exception:
         pass
     cancel_job(analysis_id)
     return {"analysis_id": analysis_id, "status": "cancelled"}
+
+
+def _analysis_namespace(analysis_id: str) -> tuple[Optional[str], Optional[str], Optional[dict]]:
+    """Return (namespace, fallback_namespace, job) for this analysis, or (None, None, None) if not found."""
+    job = get_job(analysis_id)
+    if not job:
+        return None, None, None
+    owner = job.get("owner") or ""
+    repo = job.get("repo") or ""
+    branch = job.get("branch") or "main"
+    namespace = f"{owner}/{repo}@{branch}@{analysis_id}"
+    fallback = f"{owner}/{repo}@{branch}"
+    return namespace, fallback, job
+
+
+def _format_report_for_chat(report: Optional[dict]) -> str:
+    """Build a short text summary of the analysis report for the chatbot context."""
+    if not report:
+        return ""
+    parts = []
+    summary = report.get("repo_summary") or {}
+    if isinstance(summary, dict):
+        if summary.get("short_overview"):
+            parts.append(f"Overview: {summary['short_overview']}")
+        if summary.get("how_to_run") and str(summary.get("how_to_run")).lower() != "unknown":
+            parts.append(f"How to run: {summary['how_to_run']}")
+        stack = summary.get("stack")
+        if stack:
+            parts.append(f"Stack: {', '.join(str(s) for s in stack[:15])}")
+        components = summary.get("main_components")
+        if components:
+            parts.append(f"Main components: {', '.join(str(c) for c in components[:10])}")
+    if report.get("frameworks_summary") and str(report.get("frameworks_summary")).strip() != "Unknown":
+        parts.append(f"Frameworks: {report['frameworks_summary']}")
+    return "\n".join(parts) if parts else ""
+
+
+@app.post("/v1/analyses/{analysis_id}/chat")
+def chat_for_analysis(analysis_id: str, payload: ChatRequest):
+    """
+    Chat about this analysis run using context from its Pinecone namespace and the stored report.
+    Uses a LangGraph flow: retrieve from namespace (with fallback) -> generate reply with LLM.
+    Report summary is always injected so "how do I run" etc. can be answered even when Pinecone returns nothing.
+    """
+    namespace, fallback, job = _analysis_namespace(analysis_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="not_found")
+    if job.get("status") != "completed":
+        raise HTTPException(status_code=400, detail="analysis_not_completed")
+    message = (payload.message or "").strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="message_required")
+    report_context = _format_report_for_chat(job.get("report"))
+    from graphs.chat_graph import build_chat_graph
+    graph = build_chat_graph()
+    result = graph.invoke({
+        "namespace": namespace or "",
+        "fallback_namespace": fallback or "",
+        "query": message,
+        "history": payload.history or [],
+        "report_context": report_context,
+    })
+    reply = result.get("reply") or ""
+    return {"reply": reply, "analysis_id": analysis_id}
 
 
 @app.get("/v1/analyses/{analysis_id}/report", response_model=AnalysisReportResponse)
