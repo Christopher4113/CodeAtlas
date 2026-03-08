@@ -26,9 +26,7 @@ def fetch_repo_tree(owner: str, repo: str, branch: str, token: str) -> list[dict
     params = {"recursive": "1"}
     resp = httpx.get(url, headers=_auth_headers(token), params=params, timeout=30.0)
     if resp.status_code >= 400:
-        raise GitHubError(
-            f"GitHub tree fetch failed ({resp.status_code}): {resp.text[:200]}"
-        )
+        raise GitHubError(f"GitHub tree fetch failed ({resp.status_code}): {resp.text[:200]}")
     data = resp.json()
     tree = data.get("tree", [])
     files: list[dict] = []
@@ -46,9 +44,7 @@ def fetch_repo_tree(owner: str, repo: str, branch: str, token: str) -> list[dict
     return files
 
 
-def fetch_file_content(
-    owner: str, repo: str, branch: str, path: str, token: str
-) -> str:
+def fetch_file_content(owner: str, repo: str, branch: str, path: str, token: str) -> str:
     """
     Fetch a single file's contents via the GitHub contents API.
     """
@@ -59,8 +55,7 @@ def fetch_file_content(
         return ""
     if resp.status_code >= 400:
         raise GitHubError(
-            f"GitHub content fetch failed for {path} ({resp.status_code}): "
-            f"{resp.text[:200]}"
+            f"GitHub content fetch failed for {path} ({resp.status_code}): {resp.text[:200]}"
         )
 
     data = resp.json()
@@ -95,4 +90,3 @@ def fetch_multiple_file_contents(
             text = text[:max_bytes]
         out[path] = text
     return out
-

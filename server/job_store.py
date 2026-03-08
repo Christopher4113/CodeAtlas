@@ -2,6 +2,7 @@
 Job state store: Redis when REDIS_URL is set, otherwise in-memory.
 Used by FastAPI (read/write) and Celery task (write progress and result).
 """
+
 from __future__ import annotations
 
 import json
@@ -27,6 +28,7 @@ def _redis_client():
     if not settings.redis_url:
         return None
     import redis
+
     return redis.from_url(settings.redis_url, decode_responses=True)
 
 
@@ -49,16 +51,19 @@ def create_job(analysis_id: str, owner: str, repo: str, branch: str) -> None:
     r = _redis_client()
     if r:
         key = job_key(analysis_id)
-        r.hset(key, mapping={
-            KEY_STATUS: "running",
-            KEY_STAGE: "running",
-            KEY_OWNER: owner,
-            KEY_REPO: repo,
-            KEY_BRANCH: branch,
-            KEY_PROGRESS: json.dumps([]),
-            KEY_REPORT: json.dumps(None),
-            KEY_ERROR: "",
-        })
+        r.hset(
+            key,
+            mapping={
+                KEY_STATUS: "running",
+                KEY_STAGE: "running",
+                KEY_OWNER: owner,
+                KEY_REPO: repo,
+                KEY_BRANCH: branch,
+                KEY_PROGRESS: json.dumps([]),
+                KEY_REPORT: json.dumps(None),
+                KEY_ERROR: "",
+            },
+        )
         r.expire(key, 86400 * 7)  # 7 days TTL
     else:
         payload["progress"] = []
@@ -114,12 +119,15 @@ def complete_job(analysis_id: str, report: dict[str, Any]) -> None:
     r = _redis_client()
     if r:
         key = job_key(analysis_id)
-        r.hset(key, mapping={
-            KEY_STATUS: "completed",
-            KEY_STAGE: "completed",
-            KEY_REPORT: json.dumps(report),
-            KEY_ERROR: "",
-        })
+        r.hset(
+            key,
+            mapping={
+                KEY_STATUS: "completed",
+                KEY_STAGE: "completed",
+                KEY_REPORT: json.dumps(report),
+                KEY_ERROR: "",
+            },
+        )
     else:
         if analysis_id in _IN_MEMORY:
             _IN_MEMORY[analysis_id].update(
@@ -131,16 +139,17 @@ def fail_job(analysis_id: str, error_message: str) -> None:
     r = _redis_client()
     if r:
         key = job_key(analysis_id)
-        r.hset(key, mapping={
-            KEY_STATUS: "error",
-            KEY_STAGE: "failed",
-            KEY_ERROR: error_message,
-        })
+        r.hset(
+            key,
+            mapping={
+                KEY_STATUS: "error",
+                KEY_STAGE: "failed",
+                KEY_ERROR: error_message,
+            },
+        )
     else:
         if analysis_id in _IN_MEMORY:
-            _IN_MEMORY[analysis_id].update(
-                status="error", stage="failed", error=error_message
-            )
+            _IN_MEMORY[analysis_id].update(status="error", stage="failed", error=error_message)
 
 
 def set_task_id(analysis_id: str, task_id: str) -> None:
@@ -165,13 +174,16 @@ def cancel_job(analysis_id: str) -> None:
     r = _redis_client()
     if r:
         key = job_key(analysis_id)
-        r.hset(key, mapping={
-            KEY_STATUS: "cancelled",
-            KEY_STAGE: "cancelled",
-            KEY_PROGRESS: json.dumps([]),
-            KEY_REPORT: json.dumps(None),
-            KEY_ERROR: "Cancelled",
-        })
+        r.hset(
+            key,
+            mapping={
+                KEY_STATUS: "cancelled",
+                KEY_STAGE: "cancelled",
+                KEY_PROGRESS: json.dumps([]),
+                KEY_REPORT: json.dumps(None),
+                KEY_ERROR: "Cancelled",
+            },
+        )
     else:
         if analysis_id in _IN_MEMORY:
             _IN_MEMORY[analysis_id].update(

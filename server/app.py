@@ -69,6 +69,7 @@ def _run_analysis_in_process(
     github_token: str,
 ) -> None:
     """Run analysis in-process (thread) and update job_store (in-memory)."""
+
     def on_progress(step: str, label: str) -> None:
         append_progress(analysis_id, step, label)
 
@@ -92,9 +93,11 @@ def _run_analysis_in_process(
 
 app = FastAPI()
 
+
 @app.get("/v1/health")
 def health():
     return {"status": "ok", "message": "CodeAtlas server is running"}
+
 
 @app.post("/v1/analyses", response_model=StartAnalysisResponse)
 def start_analysis(payload: StartAnalysisRequest):
@@ -105,6 +108,7 @@ def start_analysis(payload: StartAnalysisRequest):
 
     if use_redis():
         from tasks import run_analysis_async
+
         result = run_analysis_async.delay(
             analysis_id=analysis_id,
             owner=payload.owner,
@@ -155,6 +159,7 @@ def cancel_analysis(analysis_id: str):
     task_id = job.get("task_id")
     if use_redis() and task_id:
         from celery_app import app as celery_app
+
         celery_app.control.revoke(task_id, terminate=True)
     owner = job.get("owner") or ""
     repo = job.get("repo") or ""
@@ -221,14 +226,17 @@ def chat_for_analysis(analysis_id: str, payload: ChatRequest):
         raise HTTPException(status_code=400, detail="message_required")
     report_context = _format_report_for_chat(job.get("report"))
     from graphs.chat_graph import build_chat_graph
+
     graph = build_chat_graph()
-    result = graph.invoke({
-        "namespace": namespace or "",
-        "fallback_namespace": fallback or "",
-        "query": message,
-        "history": payload.history or [],
-        "report_context": report_context,
-    })
+    result = graph.invoke(
+        {
+            "namespace": namespace or "",
+            "fallback_namespace": fallback or "",
+            "query": message,
+            "history": payload.history or [],
+            "report_context": report_context,
+        }
+    )
     reply = result.get("reply") or ""
     return {"reply": reply, "analysis_id": analysis_id}
 
@@ -270,12 +278,15 @@ def pinecone_health():
         "namespaces": namespaces,
     }
 
+
 ping_graph = build_ping_graph()
+
 
 @app.post("/v1/graph/ping")
 def graph_ping():
     out = ping_graph.invoke({"prompt": "Reply with only: ok", "answer": ""})
     return {"ok": True, "answer": out["answer"]}
+
 
 @app.get("/v1/bedrock/whoami")
 def bedrock_whoami():

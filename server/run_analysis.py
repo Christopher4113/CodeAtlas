@@ -2,6 +2,7 @@
 Core analysis runner: streams graph steps and reports progress via callbacks.
 Used by both the in-process thread and the Celery task.
 """
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -51,18 +52,14 @@ def run_analysis(
 
     try:
         last_state: dict[str, Any] = {}
-        for mode, chunk in graph.stream(
-            initial_input, stream_mode=["updates", "values"]
-        ):
+        for mode, chunk in graph.stream(initial_input, stream_mode=["updates", "values"]):
             if analysis_id and is_job_cancelled(analysis_id):
                 on_error("Cancelled")
                 return
             if mode == "updates" and chunk:
                 node_name = next(iter(chunk.keys()), None)
                 if node_name:
-                    label = NODE_LABELS.get(
-                        node_name, node_name.replace("_", " ").title()
-                    )
+                    label = NODE_LABELS.get(node_name, node_name.replace("_", " ").title())
                     on_progress(node_name, label)
             elif mode == "values" and isinstance(chunk, dict):
                 last_state = chunk

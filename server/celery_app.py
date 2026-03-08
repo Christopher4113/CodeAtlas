@@ -1,6 +1,7 @@
 """
 Celery app using Redis as broker. Only configured when REDIS_URL is set.
 """
+
 from celery import Celery
 
 from settings import settings

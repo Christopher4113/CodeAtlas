@@ -353,9 +353,7 @@ def node_make_repo_overview(state: CodeAtlasState) -> CodeAtlasState:
             readme = state["files_content"][name]
             break
 
-    tree_summary_lines = [
-        f"- {f['path']}" for f in state["repo_tree"][:200]
-    ]
+    tree_summary_lines = [f"- {f['path']}" for f in state["repo_tree"][:200]]
     tree_summary = "\n".join(tree_summary_lines)
 
     package_snippet = ""
@@ -368,9 +366,9 @@ def node_make_repo_overview(state: CodeAtlasState) -> CodeAtlasState:
 You are CodeAtlas, a tool that summarizes GitHub repositories for engineers.
 
 Repository:
-- owner: {state['owner']}
-- repo: {state['repo']}
-- branch: {state['branch']}
+- owner: {state["owner"]}
+- repo: {state["repo"]}
+- branch: {state["branch"]}
 
 README (truncated):
 -------------------
@@ -429,8 +427,8 @@ def node_make_architecture_diagram(state: CodeAtlasState) -> CodeAtlasState:
 diagram as Mermaid code.
 
 Overview: {overview}
-Main components: {', '.join(components) if components else 'unknown'}
-Stack: {', '.join(stack) if stack else 'unknown'}
+Main components: {", ".join(components) if components else "unknown"}
+Stack: {", ".join(stack) if stack else "unknown"}
 
 Output ONLY a Mermaid diagram (flowchart or graph). Keep it simple: 5-10 nodes max
 showing high-level layers or components (e.g. Frontend, API, DB, Auth). Use subgraph if helpful.
@@ -470,11 +468,11 @@ def node_make_onboarding_doc(state: CodeAtlasState) -> CodeAtlasState:
     prompt = f"""You are CodeAtlas. Create a ONE-PAGE onboarding document (plain text or markdown)
 for a new developer joining this repo.
 
-Repo: {state['owner']}/{state['repo']} (branch: {state['branch']})
-Overview: {summary.get('short_overview', '')}
-How to run: {summary.get('how_to_run', 'unknown')}
-Main components: {', '.join(summary.get('main_components', []) or [])}
-Stack: {', '.join(summary.get('stack', []) or [])}
+Repo: {state["owner"]}/{state["repo"]} (branch: {state["branch"]})
+Overview: {summary.get("short_overview", "")}
+How to run: {summary.get("how_to_run", "unknown")}
+Main components: {", ".join(summary.get("main_components", []) or [])}
+Stack: {", ".join(summary.get("stack", []) or [])}
 
 README excerpt:
 ---
@@ -512,7 +510,7 @@ def node_make_dependency_graph(state: CodeAtlasState) -> CodeAtlasState:
     llm = get_llm(max_tokens=1000)
     prompt = f"""You are CodeAtlas. Produce a SIMPLE dependency graph as Mermaid code for this repo.
 
-Stack: {', '.join(stack) if stack else 'unknown'}
+Stack: {", ".join(stack) if stack else "unknown"}
 
 Dependency/config excerpt:
 ---
@@ -545,7 +543,7 @@ def node_make_bug_risk_analysis(state: CodeAtlasState) -> CodeAtlasState:
 or areas to watch.
 
 Overview: {overview}
-Notes from analysis: {chr(10).join(notes) if notes else 'None'}
+Notes from analysis: {chr(10).join(notes) if notes else "None"}
 
 Return a JSON object with a single key "bug_risks" whose value is an array of short strings
 (3-8 items), e.g. ["No input validation on API", "Env vars in code"].
@@ -637,4 +635,3 @@ def build_codeatlas_graph():
     g.add_edge("upsert_pinecone_reason", END)
 
     return g.compile()
-

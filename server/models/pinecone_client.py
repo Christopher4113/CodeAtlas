@@ -84,8 +84,7 @@ def upsert_records(namespace: str, records: Iterable[Mapping[str, Any]]) -> None
     index = get_index()
     text_field = settings.pinecone_text_field
     payload = [
-        r for r in records
-        if r and (text_field in r) and str(r.get(text_field) or "").strip()
+        r for r in records if r and (text_field in r) and str(r.get(text_field) or "").strip()
     ]
     if not payload:
         return
@@ -153,12 +152,14 @@ def search_in_namespace(
             continue
         meta = m.get("metadata") or {}
         text = meta.get(settings.pinecone_text_field) or meta.get("text") or ""
-        results.append({
-            "score": float(score),
-            "text": text[:2000] if isinstance(text, str) else str(text)[:2000],
-            "path": meta.get("path"),
-            "id": m.get("id"),
-        })
+        results.append(
+            {
+                "score": float(score),
+                "text": text[:2000] if isinstance(text, str) else str(text)[:2000],
+                "path": meta.get("path"),
+                "id": m.get("id"),
+            }
+        )
     return results
 
 
@@ -232,14 +233,16 @@ def search_repos_by_owner(
                 text_snippet = raw[:300] + "…"
             else:
                 text_snippet = raw or ""
-        results.append({
-            "owner": ns_owner,
-            "repo": repo,
-            "branch": branch,
-            "namespace": namespace,
-            "score": float(score),
-            "snippet": text_snippet,
-        })
+        results.append(
+            {
+                "owner": ns_owner,
+                "repo": repo,
+                "branch": branch,
+                "namespace": namespace,
+                "score": float(score),
+                "snippet": text_snippet,
+            }
+        )
 
     # Sort by score descending
     results.sort(key=lambda r: r["score"], reverse=True)

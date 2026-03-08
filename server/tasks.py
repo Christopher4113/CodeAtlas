@@ -1,6 +1,7 @@
 """
 Celery tasks. The analysis task runs the graph and writes progress/results to the job store.
 """
+
 from __future__ import annotations
 
 from job_store import append_progress, complete_job, fail_job, get_job, use_redis
