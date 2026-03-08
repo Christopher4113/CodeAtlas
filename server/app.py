@@ -255,28 +255,34 @@ def search_repos(payload: RepoSearchRequest):
     Search repos in Pinecone scoped to a single owner. Returns only repos belonging
     to the given owner (use the authenticated user's GitHub username as owner).
     """
-    top_k = min(payload.top_k or 10, 50)
-    results = search_repos_by_owner(
-        owner=payload.owner,
-        query_text=payload.query.strip(),
-        top_k=top_k,
-    )
-    return {"owner": payload.owner, "query": payload.query, "matches": results}
+    try:
+        top_k = min(payload.top_k or 10, 50)
+        results = search_repos_by_owner(
+            owner=payload.owner,
+            query_text=payload.query.strip(),
+            top_k=top_k,
+        )
+        return {"owner": payload.owner, "query": payload.query, "matches": results}
+    except Exception:
+        raise HTTPException(status_code=500, detail="search_failed")
 
 
 @app.get("/v1/pinecone/health")
 def pinecone_health():
-    ensure_index_exists()
-    stats = describe_index()
+    try:
+        ensure_index_exists()
+        stats = describe_index()
 
-    namespaces = {}
-    if isinstance(stats, dict):
-        namespaces = stats.get("namespaces", {})
+        namespaces = {}
+        if isinstance(stats, dict):
+            namespaces = stats.get("namespaces", {})
 
-    return {
-        "ok": True,
-        "namespaces": namespaces,
-    }
+        return {
+            "ok": True,
+            "namespaces": namespaces,
+        }
+    except Exception:
+        return {"ok": False, "namespaces": {}}
 
 
 ping_graph = build_ping_graph()
@@ -284,8 +290,11 @@ ping_graph = build_ping_graph()
 
 @app.post("/v1/graph/ping")
 def graph_ping():
-    out = ping_graph.invoke({"prompt": "Reply with only: ok", "answer": ""})
-    return {"ok": True, "answer": out["answer"]}
+    try:
+        out = ping_graph.invoke({"prompt": "Reply with only: ok", "answer": ""})
+        return {"ok": True, "answer": out["answer"]}
+    except Exception:
+        return {"ok": False, "answer": ""}
 
 
 @app.get("/v1/bedrock/whoami")
