@@ -104,7 +104,7 @@ def test_chat_analysis_not_completed():
 
 
 def test_chat_message_required():
-    """Chat with empty/whitespace message returns 400 (message_required or analysis_not_completed)."""
+    """Chat with empty/whitespace message returns 400."""
     payload = {"owner": "o", "repo": "r", "branch": "main", "github_token": "fake"}
     start_res = client.post("/v1/analyses", json=payload)
     assert start_res.status_code == 200

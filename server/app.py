@@ -263,8 +263,8 @@ def search_repos(payload: RepoSearchRequest):
             top_k=top_k,
         )
         return {"owner": payload.owner, "query": payload.query, "matches": results}
-    except Exception:
-        raise HTTPException(status_code=500, detail="search_failed")
+    except Exception as err:
+        raise HTTPException(status_code=500, detail="search_failed") from err
 
 
 @app.get("/v1/pinecone/health")
