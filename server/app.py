@@ -10,8 +10,8 @@ from pydantic import BaseModel
 load_dotenv()
 
 # Env must be loaded before first-party imports that use settings (E402 acceptable here)
-from graphs.ping_graph import build_ping_graph  # noqa: E402
-from job_store import (  # noqa: E402
+from graphs.ping_graph import build_ping_graph  # noqa: E402, I001
+from job_store import (  # noqa: E402, I001
     append_progress,
     cancel_job,
     complete_job,
@@ -21,13 +21,13 @@ from job_store import (  # noqa: E402
     set_task_id,
     use_redis,
 )
-from models.pinecone_client import (  # noqa: E402
+from models.pinecone_client import (  # noqa: E402, I001
     delete_namespace as pinecone_delete_namespace,
     describe_index,
     ensure_index_exists,
     search_repos_by_owner,
 )
-from run_analysis import run_analysis  # noqa: E402
+from run_analysis import run_analysis  # noqa: E402, I001
 
 
 class StartAnalysisRequest(BaseModel):
