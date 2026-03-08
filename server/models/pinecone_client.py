@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from functools import lru_cache
-from typing import Any
+from typing import Any, cast
 
 from pinecone import Pinecone
 
@@ -34,11 +34,10 @@ def ensure_index_exists() -> None:
             name=name,
             cloud=settings.pinecone_cloud,
             region=settings.pinecone_region,
-            metric=settings.pinecone_metric,
-            embed={
+            embed=cast(Any, {
                 "model": settings.pinecone_embed_model,
                 "field_map": {settings.pinecone_text_field: "text"},
-            },
+            }),
         )
 
 

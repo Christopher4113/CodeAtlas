@@ -5,7 +5,8 @@ LangGraph flow for the run-page chatbot. Retrieves context from Pinecone
 
 from __future__ import annotations
 
-from typing import TypedDict
+from collections.abc import Mapping
+from typing import Any, TypedDict
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langgraph.graph import END, StateGraph
@@ -19,12 +20,12 @@ class ChatState(TypedDict, total=False):
     fallback_namespace: str  # e.g. owner/repo@branch when per-run namespace is empty
     query: str
     history: list[dict]  # [{ "role": "user"|"assistant", "content": str }]
-    retrieved_docs: list[dict]
+    retrieved_docs: list[Mapping[str, Any]]
     report_context: str  # Summary/report from the analysis so LLM can answer without Pinecone
     reply: str
 
 
-def _format_docs(docs: list[dict]) -> str:
+def _format_docs(docs: list[Mapping[str, Any]]) -> str:
     if not docs:
         return "(No relevant code or docs found for this run.)"
     parts = []
@@ -36,10 +37,12 @@ def _format_docs(docs: list[dict]) -> str:
     return "\n\n---\n\n".join(parts) if parts else "(No relevant snippets.)"
 
 
-def _merge_docs_by_id(doc_lists: list[list[dict]], max_total: int = 14) -> list[dict]:
+def _merge_docs_by_id(
+    doc_lists: list[list[Mapping[str, Any]]], max_total: int = 14
+) -> list[Mapping[str, Any]]:
     """Merge search results from multiple queries, dedupe by id, keep highest score."""
     seen: set = set()
-    out: list[dict] = []
+    out: list[Mapping[str, Any]] = []
     for doc_list in doc_lists:
         for d in doc_list:
             vid = d.get("id") or id(d)
@@ -112,7 +115,8 @@ def node_generate(state: ChatState) -> ChatState:
     messages.append(HumanMessage(content=f"{context_block}\n\n---\n\nUser question: {query}"))
 
     response = llm.invoke(messages)
-    reply = (response.content or "").strip()
+    _c = response.content
+    reply = (_c if isinstance(_c, str) else "").strip()
     return {**state, "reply": reply}
 
 

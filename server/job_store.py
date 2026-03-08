@@ -37,7 +37,7 @@ def job_key(analysis_id: str) -> str:
 
 
 def create_job(analysis_id: str, owner: str, repo: str, branch: str) -> None:
-    payload = {
+    payload: dict[str, Any] = {
         "analysis_id": analysis_id,
         KEY_STATUS: "running",
         KEY_STAGE: "running",

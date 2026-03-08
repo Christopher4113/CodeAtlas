@@ -14,7 +14,9 @@ def build_ping_graph():
     def call_claude(state: PingState) -> PingState:
         llm = get_llm()
         msg = llm.invoke(state["prompt"])
-        return {"prompt": state["prompt"], "answer": msg.content}
+        content = msg.content
+        answer = content if isinstance(content, str) else (str(content) if content else "")
+        return {"prompt": state["prompt"], "answer": answer}
 
     g = StateGraph(PingState)
     g.add_node("call_claude", call_claude)

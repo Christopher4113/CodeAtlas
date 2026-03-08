@@ -23,4 +23,4 @@ class Settings(BaseSettings):
     redis_url: str | None = None
 
 
-settings = Settings()
+settings = Settings()  # type: ignore[call-arg]

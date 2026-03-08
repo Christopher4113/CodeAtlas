@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from typing import Any, TypedDict
+from typing import Any, TypedDict, cast
 
 from langgraph.graph import END, StateGraph
 
@@ -175,12 +175,12 @@ def _extract_json(text: str) -> dict[str, Any] | None:
         text = "\n".join(lines)
     text = text.strip()
     try:
-        return json.loads(text)
+        return cast(dict[str, Any] | None, json.loads(text))
     except json.JSONDecodeError:
         start, end = text.find("{"), text.rfind("}")
         if start != -1 and end != -1 and end > start:
             try:
-                return json.loads(text[start : end + 1])
+                return cast(dict[str, Any] | None, json.loads(text[start : end + 1]))
             except json.JSONDecodeError:
                 pass
     return None
@@ -266,7 +266,7 @@ def node_fetch_repo_tree(state: CodeAtlasState) -> CodeAtlasState:
         return {**state, "error": str(exc)}
 
     filtered = [f for f in tree if _should_keep_path(f["path"])]
-    return {**state, "repo_tree": filtered}
+    return {**state, "repo_tree": cast(list[RepoFile], filtered)}
 
 
 def node_fetch_file_contents(state: CodeAtlasState) -> CodeAtlasState:
@@ -397,7 +397,8 @@ Do not include backticks, markdown, or any explanation outside of the JSON.
 """
 
     msg = llm.invoke(prompt)
-    raw = msg.content.strip()
+    _c = msg.content
+    raw = (_c if isinstance(_c, str) else "").strip()
     summary = _extract_json(raw)
     if summary is None:
         summary = {
@@ -446,7 +447,8 @@ flowchart LR
 Return ONLY the Mermaid code block, no other text. Start with ```mermaid and end with ```."""
 
     msg = llm.invoke(prompt)
-    raw = (msg.content or "").strip()
+    _c = msg.content
+    raw = (_c if isinstance(_c, str) else "").strip()
     mermaid = _extract_mermaid(raw) or "flowchart LR\n  A[Repo]\n  B[Components]\n  A --> B"
     return {**state, "architecture_mermaid": mermaid}
 
@@ -489,7 +491,8 @@ Write a single page (about 300-500 words) that includes:
 Output ONLY the onboarding document text. No preamble."""
 
     msg = llm.invoke(prompt)
-    doc = (msg.content or "").strip()
+    _c = msg.content
+    doc = (_c if isinstance(_c, str) else "").strip()
     return {**state, "onboarding_doc": doc}
 
 
@@ -522,7 +525,8 @@ app -> libraries/frameworks (e.g. Next.js -> React, API -> PostgreSQL). 5-12 nod
 Return ONLY the Mermaid code block. Start with ```mermaid and end with ```."""
 
     msg = llm.invoke(prompt)
-    raw = (msg.content or "").strip()
+    _c = msg.content
+    raw = (_c if isinstance(_c, str) else "").strip()
     default_mermaid = "flowchart LR\n  App[Application]\n  Deps[Dependencies]\n  App --> Deps"
     mermaid = _extract_mermaid(raw) or default_mermaid
     return {**state, "dependency_mermaid": mermaid}
@@ -551,7 +555,8 @@ If you see no clear risks, return ["No major risks identified from summary."].
 Output ONLY valid JSON, no markdown or explanation."""
 
     msg = llm.invoke(prompt)
-    raw = (msg.content or "").strip()
+    _c = msg.content
+    raw = (_c if isinstance(_c, str) else "").strip()
     parsed = _extract_json(raw)
     risks = (parsed or {}).get("bug_risks") if isinstance(parsed, dict) else None
     if not isinstance(risks, list):
