@@ -34,10 +34,13 @@ def ensure_index_exists() -> None:
             name=name,
             cloud=settings.pinecone_cloud,
             region=settings.pinecone_region,
-            embed=cast(Any, {
-                "model": settings.pinecone_embed_model,
-                "field_map": {settings.pinecone_text_field: "text"},
-            }),
+            embed=cast(
+                Any,
+                {
+                    "model": settings.pinecone_embed_model,
+                    "field_map": {settings.pinecone_text_field: "text"},
+                },
+            ),
         )
 
 
