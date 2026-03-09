@@ -25,5 +25,5 @@ output "sqs_dlq_url" {
 
 output "redis_endpoint" {
   description = "The ElastiCache Redis endpoint for job store"
-  value       = aws_elasticache_cluster.redis.cache_nodes[0].address
+  value       = aws_elasticache_replication_group.redis.primary_endpoint_address
 }
