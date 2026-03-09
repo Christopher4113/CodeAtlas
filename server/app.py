@@ -21,6 +21,7 @@ from job_store import (  # noqa: E402, I001
     set_task_id,
     use_redis,
 )
+from settings import settings  # noqa: E402, I001
 from models.pinecone_client import (  # noqa: E402, I001
     delete_namespace as pinecone_delete_namespace,
     describe_index,
@@ -181,8 +182,12 @@ def _analysis_namespace(analysis_id: str) -> tuple[str | None, str | None, dict 
     owner = job.get("owner") or ""
     repo = job.get("repo") or ""
     branch = job.get("branch") or "main"
-    namespace = f"{owner}/{repo}@{branch}@{analysis_id}"
-    fallback = f"{owner}/{repo}@{branch}"
+    if settings.codeatlas_namespace_mode == "repo":
+        base = f"{owner}/{repo}"
+    else:
+        base = f"{owner}/{repo}@{branch}"
+    namespace = f"{base}@{analysis_id}"
+    fallback = base
     return namespace, fallback, job
 
 

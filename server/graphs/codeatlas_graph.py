@@ -18,6 +18,7 @@ from models.pinecone_client import (
     upsert_records,
     upsert_repo_card,
 )
+from settings import settings
 
 
 class RepoFile(TypedDict):
@@ -247,9 +248,10 @@ def _chunk_file(path: str, text: str, max_chars: int = 2400, overlap: int = 200)
 
 
 def _build_namespace(state: CodeAtlasState) -> str:
-    # Per-run namespace when analysis_id is set (for chatbot and latest-run context).
-    # Otherwise owner/repo@branch for backward compatibility.
-    base = f"{state['owner']}/{state['repo']}@{state['branch']}"
+    if settings.codeatlas_namespace_mode == "repo":
+        base = f"{state['owner']}/{state['repo']}"
+    else:
+        base = f"{state['owner']}/{state['repo']}@{state['branch']}"
     aid = state.get("analysis_id")
     return f"{base}@{aid}" if aid else base
 
