@@ -20,5 +20,4 @@ variable "pinecone_api_key" {
   description = "Pinecone API key for vector database access"
   type        = string
   sensitive   = true
-  default     = "pcsk_6vNSfX_BwYSbu4ZZWynYeyTEP8tTE44Q5ox4hMu99Wvqd9v5SAQgk5BMs8AhZ4CfSaQxhv"
 }
