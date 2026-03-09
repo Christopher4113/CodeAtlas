@@ -6,21 +6,20 @@ class Settings(BaseSettings):
 
     pinecone_api_key: str
     pinecone_index_name: str = "codeatlas"
-    # Pinecone serverless deployment configuration
     pinecone_cloud: str = "aws"
     pinecone_region: str = "us-east-1"
-    # When using a standalone index this dimension is used; for
-    # integrated embedding indexes (like llama-text-embed-v2) the
-    # dimension comes from the model configuration in Pinecone.
     pinecone_dimension: int = 1024
     pinecone_metric: str = "cosine"
-    # Integrated embedding configuration – matches the Pinecone console
-    # setup where the record text field is called "text".
     pinecone_embed_model: str = "llama-text-embed-v2"
     pinecone_text_field: str = "text"
-    # Optional: Redis URL for Celery broker and job state.
+    # Optional: Redis URL for job state store.
     # If unset, analyses run in-process (thread).
     redis_url: str | None = None
+    # Optional: SQS queue URL for Celery broker.
+    # When set, Celery uses SQS instead of Redis as broker.
+    sqs_queue_url: str | None = None
+    # Optional: SQS region (defaults to us-east-1)
+    sqs_region: str = "us-east-1"
 
 
 settings = Settings()  # type: ignore[call-arg]
