@@ -27,3 +27,13 @@ output "redis_endpoint" {
   description = "The ElastiCache Redis endpoint for job store"
   value       = aws_elasticache_replication_group.redis.primary_endpoint_address
 }
+
+output "ecs_cluster_name" {
+  description = "The ECS cluster name"
+  value       = aws_ecs_cluster.main.name
+}
+
+output "secret_arn" {
+  description = "The Secrets Manager secret ARN"
+  value       = aws_secretsmanager_secret.server_env.arn
+}
