@@ -60,7 +60,12 @@ resource "aws_iam_role_policy" "ecs_exec_logs" {
           "logs:CreateLogStream",
           "logs:PutLogEvents"
         ]
-        Resource = "*"
+        Resource = [
+          aws_cloudwatch_log_group.server.arn,
+          "${aws_cloudwatch_log_group.server.arn}:*",
+          aws_cloudwatch_log_group.worker.arn,
+          "${aws_cloudwatch_log_group.worker.arn}:*"
+        ]
       }
     ]
   })
@@ -102,7 +107,10 @@ resource "aws_iam_role_policy" "ecs_task_bedrock" {
           "bedrock:InvokeModel",
           "bedrock:InvokeModelWithResponseStream"
         ]
-        Resource = "*"
+        Resource = [
+          "arn:aws:bedrock:${var.aws_region}:${data.aws_caller_identity.current.account_id}:application-inference-profile/*",
+          "arn:aws:bedrock:${var.aws_region}::foundation-model/*"
+        ]
       }
     ]
   })
