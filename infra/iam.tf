@@ -108,8 +108,8 @@ resource "aws_iam_role_policy" "ecs_task_bedrock" {
           "bedrock:InvokeModelWithResponseStream"
         ]
         Resource = [
-          "arn:aws:bedrock:${var.aws_region}:${data.aws_caller_identity.current.account_id}:application-inference-profile/*",
-          "arn:aws:bedrock:${var.aws_region}::foundation-model/*"
+          "arn:aws:bedrock:${var.aws_region}:${data.aws_caller_identity.current.account_id}:application-inference-profile/q5rb8wci4a6f",
+          "arn:aws:bedrock:${var.aws_region}::foundation-model/anthropic.*"
         ]
       }
     ]

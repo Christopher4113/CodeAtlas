@@ -19,8 +19,8 @@ resource "aws_secretsmanager_secret_version" "server_env" {
     AWS_REGION                 = "us-east-1"
     BEDROCK_MODEL_ID           = "arn:aws:bedrock:us-east-1:530743905127:application-inference-profile/q5rb8wci4a6f"
     CODEATLAS_NAMESPACE_MODE   = "repo"
-    SQS_QUEUE_URL              = "https://sqs.us-east-1.amazonaws.com/530743905127/codeatlas-celery"
+    SQS_QUEUE_URL              = aws_sqs_queue.celery.url
     SQS_REGION                 = "us-east-1"
-    REDIS_URL                  = "rediss://master.codeatlas-redis.mvhwao.use1.cache.amazonaws.com:6379/0"
+    REDIS_URL                  = "rediss://${aws_elasticache_replication_group.redis.primary_endpoint_address}:6379/0"
   })
 }
