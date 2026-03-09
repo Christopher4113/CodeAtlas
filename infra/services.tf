@@ -57,7 +57,7 @@ resource "aws_ecs_task_definition" "worker" {
   cpu                      = "1024"
   memory                   = "2048"
   execution_role_arn       = aws_iam_role.ecs_exec.arn
-  task_role_arn            = aws_iam_role.ecs_task.arn
+  task_role_arn            = aws_iam_role.ecs_task_worker.arn
 
   container_definitions = jsonencode([
     {

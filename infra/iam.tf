@@ -71,8 +71,8 @@ resource "aws_iam_role_policy" "ecs_exec_logs" {
   })
 }
 
-# ECS Task Role
-# Used by the application running in the container
+# ECS Task Role — Server (FastAPI)
+# Needs: Bedrock (invoke for chat/ping), SQS (send messages to enqueue tasks)
 resource "aws_iam_role" "ecs_task" {
   name = "${var.project_name}-ecs-task-role"
 
@@ -108,8 +108,7 @@ resource "aws_iam_role_policy" "ecs_task_bedrock" {
           "bedrock:InvokeModelWithResponseStream"
         ]
         Resource = [
-          "arn:aws:bedrock:${var.aws_region}:${data.aws_caller_identity.current.account_id}:application-inference-profile/q5rb8wci4a6f",
-          "arn:aws:bedrock:${var.aws_region}::foundation-model/anthropic.*"
+          "arn:aws:bedrock:${var.aws_region}:${data.aws_caller_identity.current.account_id}:application-inference-profile/q5rb8wci4a6f"
         ]
       }
     ]
@@ -127,11 +126,76 @@ resource "aws_iam_role_policy" "ecs_task_sqs" {
         Effect = "Allow"
         Action = [
           "sqs:SendMessage",
+          "sqs:GetQueueAttributes",
+          "sqs:GetQueueUrl"
+        ]
+        Resource = [
+          aws_sqs_queue.celery.arn
+        ]
+      }
+    ]
+  })
+}
+
+# ECS Task Role — Worker (Celery)
+# Needs: Bedrock (invoke for analysis), SQS (consume messages from queue)
+resource "aws_iam_role" "ecs_task_worker" {
+  name = "${var.project_name}-ecs-task-worker-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ecs-tasks.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name = "${var.project_name}-ecs-task-worker-role"
+  }
+}
+
+resource "aws_iam_role_policy" "ecs_task_worker_bedrock" {
+  name = "${var.project_name}-ecs-task-worker-bedrock"
+  role = aws_iam_role.ecs_task_worker.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "bedrock:InvokeModel",
+          "bedrock:InvokeModelWithResponseStream"
+        ]
+        Resource = [
+          "arn:aws:bedrock:${var.aws_region}:${data.aws_caller_identity.current.account_id}:application-inference-profile/q5rb8wci4a6f"
+        ]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "ecs_task_worker_sqs" {
+  name = "${var.project_name}-ecs-task-worker-sqs"
+  role = aws_iam_role.ecs_task_worker.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
           "sqs:ReceiveMessage",
           "sqs:DeleteMessage",
+          "sqs:ChangeMessageVisibility",
           "sqs:GetQueueAttributes",
-          "sqs:GetQueueUrl",
-          "sqs:ChangeMessageVisibility"
+          "sqs:GetQueueUrl"
         ]
         Resource = [
           aws_sqs_queue.celery.arn,

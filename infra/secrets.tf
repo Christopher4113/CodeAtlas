@@ -21,6 +21,6 @@ resource "aws_secretsmanager_secret_version" "server_env" {
     CODEATLAS_NAMESPACE_MODE   = "repo"
     SQS_QUEUE_URL              = aws_sqs_queue.celery.url
     SQS_REGION                 = "us-east-1"
-    REDIS_URL                  = "rediss://${aws_elasticache_replication_group.redis.primary_endpoint_address}:6379/0"
+    REDIS_URL                  = "rediss://${aws_elasticache_replication_group.redis.primary_endpoint_address}:6379/0?ssl_cert_reqs=CERT_REQUIRED"
   })
 }
