@@ -27,9 +27,27 @@ KEY_TASK_ID = "task_id"
 def _redis_client():
     if not settings.redis_url:
         return None
+    import ssl
+    from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+
     import redis
 
-    return redis.from_url(settings.redis_url, decode_responses=True)
+    url = settings.redis_url
+    parsed = urlparse(url)
+    qs = parse_qs(parsed.query)
+    cert_reqs_str = qs.pop("ssl_cert_reqs", [None])[0]
+    clean_url = urlunparse(parsed._replace(query=urlencode(qs, doseq=True)))
+
+    ssl_map = {
+        "CERT_REQUIRED": ssl.CERT_REQUIRED,
+        "CERT_OPTIONAL": ssl.CERT_OPTIONAL,
+        "CERT_NONE": ssl.CERT_NONE,
+    }
+    ssl_kwargs = {}
+    if parsed.scheme == "rediss":
+        ssl_kwargs["ssl_cert_reqs"] = ssl_map.get(cert_reqs_str, ssl.CERT_REQUIRED)
+
+    return redis.from_url(clean_url, decode_responses=True, **ssl_kwargs)
 
 
 def job_key(analysis_id: str) -> str:
