@@ -162,10 +162,7 @@ def cancel_analysis(analysis_id: str):
         from celery_app import app as celery_app
 
         celery_app.control.revoke(task_id, terminate=True)
-    owner = job.get("owner") or ""
-    repo = job.get("repo") or ""
-    branch = job.get("branch") or "main"
-    namespace = f"{owner}/{repo}@{branch}@{analysis_id}"
+    namespace, _, _ = _analysis_namespace(analysis_id)
     try:
         pinecone_delete_namespace(namespace)
     except Exception:

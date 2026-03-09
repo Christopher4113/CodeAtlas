@@ -7,6 +7,14 @@ resource "aws_s3_bucket" "codebuild_source" {
   }
 }
 
+resource "aws_s3_bucket_versioning" "codebuild_source" {
+  bucket = aws_s3_bucket.codebuild_source.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
 # CodeBuild IAM Role
 resource "aws_iam_role" "codebuild" {
   name = "${var.project_name}-codebuild-role"
@@ -124,6 +132,11 @@ resource "aws_codebuild_project" "server" {
     image_pull_credentials_type = "CODEBUILD"
 
     environment_variable {
+      name  = "AWS_DEFAULT_REGION"
+      value = var.aws_region
+    }
+
+    environment_variable {
       name  = "AWS_ACCOUNT_ID"
       value = data.aws_caller_identity.current.account_id
     }
@@ -143,16 +156,16 @@ resource "aws_codebuild_project" "server" {
         pre_build:
           commands:
             - echo Logging in to Amazon ECR...
-            - aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 530743905127.dkr.ecr.us-east-1.amazonaws.com
+            - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
         build:
           commands:
             - echo Building the Docker image...
             - docker build -t codeatlas-server .
-            - docker tag codeatlas-server:latest 530743905127.dkr.ecr.us-east-1.amazonaws.com/codeatlas-server:latest
+            - docker tag codeatlas-server:latest $ECR_REPO_URL:latest
         post_build:
           commands:
             - echo Pushing the Docker image...
-            - docker push 530743905127.dkr.ecr.us-east-1.amazonaws.com/codeatlas-server:latest
+            - docker push $ECR_REPO_URL:latest
     EOF
   }
 
