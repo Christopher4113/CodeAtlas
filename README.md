@@ -4,6 +4,12 @@
 
 ---
 
+## Demo
+
+▶️ **[Watch the CodeAtlas demo on Vimeo](https://vimeo.com/1183541168)**
+
+---
+
 ## Features
 
 - **Repository analysis** – Clone a repo (via GitHub API), chunk and classify files, then run a multi-step pipeline:
